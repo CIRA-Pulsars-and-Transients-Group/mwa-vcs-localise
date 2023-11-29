@@ -1,0 +1,30 @@
+[build-system]
+requires = ["setuptools >= 61.0"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools-git-versioning] # use Git info to version
+enabled = true
+
+[project]
+name = "mwa_vcs_localise"
+dynamic = ["version"]
+readme = "README.md"
+description = "A package to help localise objects through tied-array beam tiling with the MWA."
+license = { file = "LICENSE" }
+authors = [{ name = "Bradley Meyers", email = "bradley.meyers1993@gmail.com" }]
+classifiers = [
+  "Programming Language :: Python :: 3",
+  "License :: OSI Approved :: Academic Free License (AFL)",
+  "Operating System :: POSIX :: Linux",
+  "Topic :: Scientific/Engineering :: Astronomy",
+]
+requires-python = ">=3.10"
+dependencies = ["astropy>=5.0", "attrs"]
+
+[project.scripts]
+mwa_tab_loc = "mwa_vcs_localise:tab_localise.main"
+
+
+[project.urls]
+Repository = "https://github.com/CIRA-Pulsars-and-Transients-Group/mwa-vcs-localise.git"
+Issues = "https://github.com/CIRA-Pulsars-and-Transients-Group/mwa-vcs-localise/issues"
