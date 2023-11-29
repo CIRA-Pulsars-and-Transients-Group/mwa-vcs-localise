@@ -9,7 +9,7 @@ from .utils import Array
 
 
 def main():
-    parser = argparse.ArgumentParse()
+    parser = argparse.ArgumentParser()
     parser.add_argument("metafits")
 
     args = parser.parse_args()
