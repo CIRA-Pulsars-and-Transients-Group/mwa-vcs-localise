@@ -5,7 +5,7 @@
 ########################################################
 
 import argparse
-from .utils import Array
+from .utils import TileArray
 
 
 def main():
@@ -14,7 +14,7 @@ def main():
 
     args = parser.parse_args()
 
-    a = Array()
+    a = TileArray.from_metafits(args.metafits)
     print(a)
 
 
