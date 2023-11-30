@@ -5,7 +5,6 @@
 ########################################################
 
 from attrs import define, field
-import astropy.units as u
 from astropy.io import fits
 import numpy as np
 
