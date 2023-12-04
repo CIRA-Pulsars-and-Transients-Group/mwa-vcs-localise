@@ -10,6 +10,7 @@ from astropy.coordinates import SkyCoord, AltAz
 from astropy.time import Time
 from .utils import MWA_LOCATION
 from .array_factor import calcGeometricDelays, calcArrayFactorPower
+from .primary_beam import getPrimaryBeamPower
 
 
 def main():
@@ -34,6 +35,7 @@ def main():
 
     args = parser.parse_args()
 
+    # Collect meta information and setup configuration.
     context = mwalib.MetafitsContext(args.metafits)
     time = Time(args.time, format="isot", scale="utc")
     altaz_frame = AltAz(location=MWA_LOCATION, obstime=time)
@@ -48,6 +50,7 @@ def main():
         unit=("hourangle", "deg"),
     ).transform_to(altaz_frame)
 
+    # Compute the array factor (tied-array beam weighting factor).
     look_psi = calcGeometricDelays(
         context,
         args.freq,
@@ -63,6 +66,19 @@ def main():
 
     afp = calcArrayFactorPower(look_psi, target_psi)
     print(afp)
+
+    # Compute the primary beam zenith-normalised power.
+    pbp = getPrimaryBeamPower(
+        context,
+        args.freq,
+        target_position.alt.rad,
+        target_position.az.rad,
+    )
+    print(pbp)
+
+    # Finally, estimate the zenith-normalised tied-array beam power.
+    tabp = afp * pbp
+    print(tabp)
 
 
 if __name__ == "__main__":
