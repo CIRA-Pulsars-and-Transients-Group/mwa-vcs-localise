@@ -5,14 +5,14 @@
 ########################################################
 
 import numpy as np
-import mwalib
+from mwalib import MetafitsContext
 from astropy.constants import c as sol
 
 from .utils import MWA_CENTRE_LON, MWA_CENTRE_LAT, MWA_CENTRE_H, MWA_CENTRE_CABLE_LEN
 
 
 def calcGeometricDelays(
-    metadata: mwalib.MetafitsContext, freq_hz: float, alt: float, az: float
+    metadata: MetafitsContext, freq_hz: float, alt: float, az: float
 ):
     unit_N = np.cos(alt) * np.cos(az)
     unit_E = np.cos(alt) * np.sin(az)
