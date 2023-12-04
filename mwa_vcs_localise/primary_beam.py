@@ -4,21 +4,21 @@
 # Licensed under the Academic Free License version 3.0 #
 ########################################################
 
-import mwalib
-import mwa_hyperbeam
+from mwalib import MetafitsContext
+from mwa_hyperbeam import FEEBeam as PrimaryBeam
 import numpy as np
 from .utils import make_grid
 
 
 def getPrimaryBeamPower(
-    metadata: mwalib.MetafitsContext,
+    metadata: MetafitsContext,
     freq_hz: float,
     alt: float,
     az: float,
     zenithNorm: bool = True,
 ):
     za = np.pi / 2 - alt
-    beam = mwa_hyperbeam.FEEBeam()
+    beam = PrimaryBeam()
     sky = np.eye(2)
 
     jones = beam.calc_jones_array(
@@ -35,7 +35,7 @@ def getPrimaryBeamPower(
 
 
 def getPrimaryBeamPower_2D(
-    metadata: mwalib.MetafitsContext,
+    metadata: MetafitsContext,
     freq_hz: float,
     alt0: float,
     alt1: float,
@@ -48,7 +48,7 @@ def getPrimaryBeamPower_2D(
     za1 = np.pi / 2 - alt1
     az, za = make_grid(az0, az1, za0, za1, ncells)
 
-    beam = mwa_hyperbeam.FEEBeam()
+    beam = PrimaryBeam()
     sky = np.eye(2)
 
     jones = beam.calc_jones_array(
