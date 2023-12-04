@@ -19,7 +19,7 @@ classifiers = [
   "Topic :: Scientific/Engineering :: Astronomy",
 ]
 requires-python = ">=3.10"
-dependencies = ["astropy>=5.0", "attrs"]
+dependencies = ["astropy>=5.0", "oldest-supported-numpy", "mwalib"]
 
 [project.scripts]
 mwa_tab_loc = "mwa_vcs_localise:tab_localise.main"
