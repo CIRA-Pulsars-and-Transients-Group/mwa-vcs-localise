@@ -16,22 +16,36 @@ from .primary_beam import getPrimaryBeamPower
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("metafits")
     parser.add_argument(
-        "--time", type=str, help="UTC time of observation (format: ISOT)."
+        "-m",
+        dest="metafits",
+        type=str,
+        help="Metafits file of the associated observation.",
     )
-    parser.add_argument("--freq", type=float, help="Observing frequency in Hz.")
     parser.add_argument(
-        "--look",
-        "-l",
+        "-t", dest="time", type=str, help="UTC time of observation (format: ISOT)."
+    )
+    parser.add_argument(
+        "-f", dest="freq", type=float, help="Observing frequency in Hz."
+    )
+    parser.add_argument(
+        "-L",
+        dest="look",
         type=str,
         help="Look-direction sky position (format: 'hh:mm:ss_dd:mm:ss')",
     )
     parser.add_argument(
-        "--position",
-        "-p",
+        "-P",
+        dest="position",
         type=str,
-        help="Sky position to compute array factor given the look-direction (format: 'hh:mm:ss_dd:mm:ss')",
+        help="Sky position to compute array factor given the look-direction "
+        "(format: 'hh:mm:ss_dd:mm:ss').\nYou may provide multiple sky positions "
+        "to sample, separating them by a single <space>.",
+    )
+    parser.add_argument(
+        "--plot",
+        action="store_true",
+        help="Whether to plot the TAB power for each provided point.",
     )
 
     args = parser.parse_args()
@@ -54,43 +68,54 @@ def main():
         look_dec,
         frame="icrs",
         unit=("hourangle", "deg"),
-    ).transform_to(altaz_frame)
+    )
+    look_position_altaz = look_position.transform_to(altaz_frame)
     target_positions = SkyCoord(
         target_ras,
         target_decs,
         frame="icrs",
         unit=("hourangle", "deg"),
-    ).transform_to(altaz_frame)
+    )
+    target_positions_altaz = target_positions.transform_to(altaz_frame)
 
     # Compute the array factor (tied-array beam weighting factor).
     look_psi = calcGeometricDelays(
         context,
         args.freq,
-        look_position.alt.rad,
-        look_position.az.rad,
+        look_position_altaz.alt.rad,
+        look_position_altaz.az.rad,
     )
     target_psi = calcGeometricDelays(
         context,
         args.freq,
-        target_positions.alt.rad,
-        target_positions.az.rad,
+        target_positions_altaz.alt.rad,
+        target_positions_altaz.az.rad,
     )
-
     afp = calcArrayFactorPower(look_psi, target_psi)
-    print(afp)
 
     # Compute the primary beam zenith-normalised power.
     pbp = getPrimaryBeamPower(
         context,
         args.freq,
-        target_positions.alt.rad,
-        target_positions.az.rad,
+        target_positions_altaz.alt.rad,
+        target_positions_altaz.az.rad,
     )
-    print(pbp)
 
     # Finally, estimate the zenith-normalised tied-array beam power.
     tabp = afp * pbp
-    print(tabp)
+
+    if args.plot:
+        plt.scatter(
+            target_positions.ra.deg,
+            target_positions.dec.deg,
+            c=tabp,
+            cmap=plt.get_cmap("Reds"),
+            norm="linear",
+        )
+        plt.xlabel("RA (deg)")
+        plt.ylabel("Dec (deg)")
+        plt.colorbar(label="Zenith-normalised tied-array beam sensitivity")
+        plt.show()
 
 
 if __name__ == "__main__":
