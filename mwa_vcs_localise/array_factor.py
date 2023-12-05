@@ -34,6 +34,29 @@ def calcGeometricDelays(
 
 
 def calcArrayFactorPower(look_w, target_w):
-    sum_over_antennas = np.sum(np.conjugate(look_w) * target_w)
+    """Compute the array factor power from a given pointing phasor
+    and one or more target directions.
+
+    :param look_w: The complex phasor representing the tile phases
+        in the desired "look direction".
+    :type look_w: np.array, complex
+    :param target_w: The complex phasor(s) representing the tile
+        phases required to look in the desired sample directions.
+    :type target_w: np.ndarray, complex
+    :return: The absolute array factor power, for each given
+        target direction.
+    :rtype: np.ndarray
+    """
+    sum_over_antennas = np.dot(np.conjugate(look_w), target_w)
+    # From the numpy.dot documentation:
+    #
+    #    "If `a`` is an N-D array and `b` is a 1-D array,
+    #     it is a sum product over the last axis of `a` and `b`."
+    #
+    # which is ideal in our case because `a` is our look direction
+    # and `b` is our (potentially many) target directions.
+
+    # The array factor power is normalise to the number of elements
+    # included in the sum (i.e., length of the look_w vector).
     afp = (np.absolute(sum_over_antennas) / look_w.size) ** 2
     return afp
