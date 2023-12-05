@@ -8,6 +8,7 @@ import argparse
 import mwalib
 from astropy.coordinates import SkyCoord, AltAz
 from astropy.time import Time
+import matplotlib.pyplot as plt
 from .utils import MWA_LOCATION
 from .array_factor import calcGeometricDelays, calcArrayFactorPower
 from .primary_beam import getPrimaryBeamPower
@@ -41,11 +42,22 @@ def main():
     altaz_frame = AltAz(location=MWA_LOCATION, obstime=time)
 
     look_ra, look_dec = args.look.split("_")
-    target_ra, target_dec = args.position.split("_")
+    # In principle, allow the user to provide N inputs separated by spaces
+    target_ras = []
+    target_decs = []
+    for p in args.position.split(" "):
+        target_ras.append(p.split("_")[0])
+        target_decs.append(p.split("_")[1])
 
-    look_position, target_position = SkyCoord(
-        [look_ra, target_ra],
-        [look_dec, target_dec],
+    look_position = SkyCoord(
+        look_ra,
+        look_dec,
+        frame="icrs",
+        unit=("hourangle", "deg"),
+    ).transform_to(altaz_frame)
+    target_positions = SkyCoord(
+        target_ras,
+        target_decs,
         frame="icrs",
         unit=("hourangle", "deg"),
     ).transform_to(altaz_frame)
@@ -60,8 +72,8 @@ def main():
     target_psi = calcGeometricDelays(
         context,
         args.freq,
-        target_position.alt.rad,
-        target_position.az.rad,
+        target_positions.alt.rad,
+        target_positions.az.rad,
     )
 
     afp = calcArrayFactorPower(look_psi, target_psi)
@@ -71,8 +83,8 @@ def main():
     pbp = getPrimaryBeamPower(
         context,
         args.freq,
-        target_position.alt.rad,
-        target_position.az.rad,
+        target_positions.alt.rad,
+        target_positions.az.rad,
     )
     print(pbp)
 
