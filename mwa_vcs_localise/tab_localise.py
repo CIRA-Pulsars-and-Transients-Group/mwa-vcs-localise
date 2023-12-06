@@ -81,8 +81,8 @@ def main():
         target_positions = form_grid_positions(
             look_position,
             max_separation_arcsec=fwhm.to(u.arcsecond).value / 10,
-            freq_hz=args.freq,
             nbeams=n,
+            nlayers=10,
             overlap=True,
         )
     else:
