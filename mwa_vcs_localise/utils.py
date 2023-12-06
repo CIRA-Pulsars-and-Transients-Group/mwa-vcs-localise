@@ -55,8 +55,8 @@ def make_grid(az0: float, az1: float, za0: float, za1: float, n: int):
 def form_grid_positions(
     central_coords: SkyCoord,
     max_separation_arcsec: float = 60.0,
-    freq_hz: float = 154240000,
     nbeams: int = 7,
+    nlayers: int = 1,
     overlap: bool = False,
     verbose: bool = False,
 ) -> SkyCoord:
@@ -76,8 +76,17 @@ def form_grid_positions(
     fwhm = (max_separation_arcsec * u.arcsecond).to(u.rad)
 
     nodes = [central_coords]
-    for i in range(nbeams - 1):
-        nodes.append(nodes[0].directional_offset_by(i * symmetry_angle, rho * fwhm))
+    for j in range(nlayers):
+        nnodes_this_layer = (j + 1) * (nbeams - 1)
+        if verbose:
+            print(f"number of nodes to make on layer {j}: {nnodes_this_layer}")
+        for i in range(nnodes_this_layer):
+            pa = i * symmetry_angle / (j + 1)
+            r = rho * fwhm * (j + 1)
+            node = nodes[0].directional_offset_by(pa, r)
+            if verbose:
+                print(f"made node: r={r} pa={pa}")
+            nodes.append(node)
 
     if verbose:
         print("grid #  RA (deg)   Dec (deg)")
