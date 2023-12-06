@@ -21,13 +21,6 @@ MWA_LOCATION = EarthLocation.from_geodetic(
     lon=MWA_CENTRE_LON, lat=MWA_CENTRE_LAT, height=MWA_CENTRE_H
 )
 
-SYMMETRY_ANGLES = {
-    7: Angle(60 * u.degree),
-    8: Angle(51.4 * u.degree),
-    9: Angle(45 * u.degree),
-    10: Angle(40 * u.degree),
-}
-
 
 def make_grid(az0: float, az1: float, za0: float, za1: float, n: int):
     """Create a mesh-grid in 2D with n cells on each side.
@@ -55,19 +48,34 @@ def make_grid(az0: float, az1: float, za0: float, za1: float, n: int):
 def form_grid_positions(
     central_coords: SkyCoord,
     max_separation_arcsec: float = 60.0,
-    nbeams: int = 7,
+    nbeams: int = 6,
     nlayers: int = 1,
     overlap: bool = False,
     verbose: bool = False,
 ) -> SkyCoord:
-    if nbeams not in [7, 8, 9, 10]:
-        print(
-            "WARNING: Gridding with {0} beams is not currently implemented -"
-            " defaulting to 7 (hexagonal packing)".format(nbeams)
-        )
-        nbeams = 7
+    """Based on a central sky position, tile beams around it
+    with a given separation.
 
-    symmetry_angle = Angle(SYMMETRY_ANGLES[nbeams])
+    :param central_coords: The central beam positions, around which to
+        tile beams.
+    :type central_coords: SkyCoord
+    :param max_separation_arcsec: Maximum radial separation (away from
+        central point), defaults to 60.0
+    :type max_separation_arcsec: float, optional
+    :param nbeams: Number of beams to form in the first layer of tiled
+        beams, defaults to 6
+    :type nbeams: int, optional
+    :param nlayers: Number of layers of beams to produce, defaults to 1
+    :type nlayers: int, optional
+    :param overlap: Whether to allow some overlap of "fwhm" radius
+        (effectively shrinks max. separation by ~80%), defaults to False
+    :type overlap: bool, optional
+    :param verbose: Output extra information, defaults to False
+    :type verbose: bool, optional
+    :return: A SkyCoord object containing all produced tiling beams.
+    :rtype: SkyCoord
+    """
+    symmetry_angle = Angle(360 * u.deg / (nbeams - 1))
     if overlap:
         rho = np.sqrt(3) / 2.0  # optimal coverage for hexagonal circle packing, N=7
     else:
@@ -96,24 +104,34 @@ def form_grid_positions(
     return SkyCoord(nodes)
 
 
-def find_max_baseline(context: MetafitsContext):
+def find_max_baseline(context: MetafitsContext) -> list:
+    """Use a Convex Hull method to calculate the maximum distance
+    between two tiles given their 3D coordinates.
+
+    :param context: A mwalib.MetafitsContext object that contains
+        tile-position information.
+    :type context: MetafitsContext
+    :return: The maximum distance, and corresponding pair of
+        coordinates.
+    :rtype: list, 3-elements
+    """
     tile_positions = np.array(
         [
             np.array([rf.east_m, rf.north_m, rf.height_m])
             for rf in context.rf_inputs[::2]
         ]
     )
-
+    # Create the convex hull
     hull = ConvexHull(tile_positions)
 
     # Extract the points forming the hull
     hullpoints = tile_positions[hull.vertices, :]
 
-    # Naive way of finding the best pair in O(H^2) time if H is number of points on
-    # hull
+    # Naive way of finding the best pair in O(H^2) time if H is number
+    # of points on the hull
     hdist = cdist(hullpoints, hullpoints, metric="euclidean")
 
     # Get the farthest apart points
     bestpair = np.unravel_index(hdist.argmax(), hdist.shape)
 
-    return hdist.max(), hullpoints[bestpair[0]], hullpoints[bestpair[1]]
+    return [hdist.max(), hullpoints[bestpair[0]], hullpoints[bestpair[1]]]
