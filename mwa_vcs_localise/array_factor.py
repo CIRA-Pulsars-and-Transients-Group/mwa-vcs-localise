@@ -8,7 +8,7 @@ import numpy as np
 from mwalib import MetafitsContext
 from astropy.constants import c as sol
 
-from .utils import MWA_CENTRE_LON, MWA_CENTRE_LAT, MWA_CENTRE_H, MWA_CENTRE_CABLE_LEN
+from .utils import MWA_CENTRE_CABLE_LEN
 
 
 def calcGeometricDelays(
@@ -20,9 +20,9 @@ def calcGeometricDelays(
     rf_inputs = metadata.rf_inputs[::2]
     phi = []
     for rf in rf_inputs:
-        e = rf.east_m - MWA_CENTRE_LON.value
-        n = rf.north_m - MWA_CENTRE_LAT.value
-        h = rf.height_m - MWA_CENTRE_H.value
+        e = rf.east_m
+        n = rf.north_m
+        h = rf.height_m
         ell = rf.electrical_length_m - MWA_CENTRE_CABLE_LEN.value
 
         w = e * unit_E + n * unit_N + h * unit_H
