@@ -8,8 +8,11 @@ import argparse
 import mwalib
 from astropy.coordinates import SkyCoord, AltAz
 from astropy.time import Time
+from astropy.constants import c as sol
+import astropy.units as u
 import matplotlib.pyplot as plt
-from .utils import MWA_LOCATION
+from .utils import MWA_LOCATION, form_grid_positions, find_max_baseline
+
 from .array_factor import calcGeometricDelays, calcArrayFactorPower
 from .primary_beam import getPrimaryBeamPower
 
@@ -52,17 +55,15 @@ def main():
 
     # Collect meta information and setup configuration.
     context = mwalib.MetafitsContext(args.metafits)
+    max_baseline, _, _ = find_max_baseline(context)
+    fwhm = (1.22 * (sol.value / args.freq) / max_baseline) * u.rad
+    print(f"maximum baseline (m): {max_baseline}")
+    print(f"beam fwhm (arcmin): {fwhm.to(u.arcminute).value}")
     time = Time(args.time, format="isot", scale="utc")
     altaz_frame = AltAz(location=MWA_LOCATION, obstime=time)
 
+    # Create the astrometric quantity for the beamformed target direction
     look_ra, look_dec = args.look.split("_")
-    # In principle, allow the user to provide N inputs separated by spaces
-    target_ras = []
-    target_decs = []
-    for p in args.position.split(" "):
-        target_ras.append(p.split("_")[0])
-        target_decs.append(p.split("_")[1])
-
     look_position = SkyCoord(
         look_ra,
         look_dec,
@@ -70,12 +71,31 @@ def main():
         unit=("hourangle", "deg"),
     )
     look_position_altaz = look_position.transform_to(altaz_frame)
-    target_positions = SkyCoord(
-        target_ras,
-        target_decs,
-        frame="icrs",
-        unit=("hourangle", "deg"),
-    )
+
+    # In principle, allow the user to provide N inputs separated by spaces, or just ask for M pointings around the source
+    target_ras = []
+    target_decs = []
+
+    if args.position.isdigit():
+        n = int(args.position)
+        target_positions = form_grid_positions(
+            look_position,
+            max_separation_arcsec=fwhm.to(u.arcsecond).value / 10,
+            freq_hz=args.freq,
+            nbeams=n,
+            overlap=True,
+        )
+    else:
+        for p in args.position.split(" "):
+            target_ras.append(p.split("_")[0])
+            target_decs.append(p.split("_")[1])
+
+        target_positions = SkyCoord(
+            target_ras,
+            target_decs,
+            frame="icrs",
+            unit=("hourangle", "deg"),
+        )
     target_positions_altaz = target_positions.transform_to(altaz_frame)
 
     # Compute the array factor (tied-array beam weighting factor).
@@ -106,8 +126,8 @@ def main():
 
     if args.plot:
         plt.scatter(
-            target_positions.ra.deg,
-            target_positions.dec.deg,
+            target_positions.ra,
+            target_positions.dec,
             c=tabp,
             cmap=plt.get_cmap("Reds"),
             norm="linear",
@@ -115,6 +135,7 @@ def main():
         plt.xlabel("RA (deg)")
         plt.ylabel("Dec (deg)")
         plt.colorbar(label="Zenith-normalised tied-array beam sensitivity")
+        plt.tight_layout()
         plt.show()
 
 
