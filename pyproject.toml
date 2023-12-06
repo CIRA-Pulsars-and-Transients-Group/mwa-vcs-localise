@@ -1,5 +1,5 @@
 [build-system]
-requires = ["setuptools >= 61.0"]
+requires = ["setuptools >= 61.0", "wheel", "oldest-supported-numpy"]
 build-backend = "setuptools.build_meta"
 
 [tool.setuptools-git-versioning] # use Git info to version
@@ -18,10 +18,11 @@ classifiers = [
   "Operating System :: POSIX :: Linux",
   "Topic :: Scientific/Engineering :: Astronomy",
 ]
-requires-python = ">=3.10"
+requires-python = ">=3.8"
 dependencies = [
-  "astropy>=5.0",
-  "oldest-supported-numpy",
+  "astropy ~=5.0",
+  "matplotlib ~=3.8",
+  "scipy ~=1.11",
   "mwalib",
   "mwa_hyperbeam",
 ]
