@@ -41,9 +41,12 @@ def main():
         "-P",
         dest="position",
         type=str,
-        help="Sky position to compute array factor given the look-direction "
-        "(format: 'hh:mm:ss_dd:mm:ss').\nYou may provide multiple sky positions "
-        "to sample, separating them by a single <space>.",
+        help="""Sky position to compute array factor given the look-direction
+        (format: 'hh:mm:ss_dd:mm:ss').
+        You may provide multiple sky positions to sample, separating them by
+        a single <space>.
+        If a single number is provided, this defines the number of beams to
+        evenly distribute in a ring surrounding the look-direction.""",
     )
     parser.add_argument(
         "--plot",
