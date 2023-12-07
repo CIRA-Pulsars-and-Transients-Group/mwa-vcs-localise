@@ -25,6 +25,7 @@ dependencies = [
   "scipy ~=1.11",
   "mwalib",
   "mwa_hyperbeam",
+  "tqdm",
 ]
 
 [project.scripts]
