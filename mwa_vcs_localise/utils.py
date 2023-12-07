@@ -10,6 +10,7 @@ from scipy.spatial.distance import cdist
 from astropy.coordinates import EarthLocation, Angle, SkyCoord
 import astropy.units as u
 from astropy.constants import c as sol
+from tqdm import tqdm
 from mwalib import MetafitsContext
 
 MWA_CENTRE_LON = 116.67081524 * u.deg
@@ -48,7 +49,6 @@ def make_grid(az0: float, az1: float, za0: float, za1: float, n: int):
 def form_grid_positions(
     central_coords: SkyCoord,
     max_separation_arcsec: float = 60.0,
-    nbeams: int = 6,
     nlayers: int = 1,
     overlap: bool = False,
     verbose: bool = False,
@@ -62,9 +62,6 @@ def form_grid_positions(
     :param max_separation_arcsec: Maximum radial separation (away from
         central point), defaults to 60.0
     :type max_separation_arcsec: float, optional
-    :param nbeams: Number of beams to form in the first layer of tiled
-        beams, defaults to 6
-    :type nbeams: int, optional
     :param nlayers: Number of layers of beams to produce, defaults to 1
     :type nlayers: int, optional
     :param overlap: Whether to allow some overlap of "fwhm" radius
@@ -75,26 +72,37 @@ def form_grid_positions(
     :return: A SkyCoord object containing all produced tiling beams.
     :rtype: SkyCoord
     """
-    symmetry_angle = Angle(360 * u.deg / (nbeams - 1))
+    symmetry_angle = Angle(360 * u.deg / 6)
+    fwhm = Angle(max_separation_arcsec * u.arcsecond)
+
     if overlap:
         rho = np.sqrt(3) / 2.0  # optimal coverage for hexagonal circle packing, N=7
     else:
         rho = 1
 
-    fwhm = (max_separation_arcsec * u.arcsecond).to(u.rad)
-
     nodes = [central_coords]
-    for j in range(nlayers):
-        nnodes_this_layer = (j + 1) * (nbeams - 1)
-        if verbose:
-            print(f"number of nodes to make on layer {j}: {nnodes_this_layer}")
-        for i in range(nnodes_this_layer):
-            pa = i * symmetry_angle / (j + 1)
-            r = rho * fwhm * (j + 1)
-            node = nodes[0].directional_offset_by(pa, r)
+    # sum((j + 1) * (nbeams - 1) for j in range(nlayers)) can be written
+    # as the following, given that range(N) = 0, 1, ..., n-1
+    total_nodes = int(nlayers * (nlayers + 1) * 6 / 2)
+    print(f"nlayers = {nlayers}, total nodes = {total_nodes}")
+
+    progressbar = tqdm(
+        total=total_nodes,
+        desc="calc. node positions",
+        bar_format="{desc}:{percentage:4.0f}%|{bar:25}{r_bar}",
+    )
+    with progressbar as pbar:
+        for j in range(nlayers):
+            nnodes_this_layer = (j + 1) * 6
             if verbose:
-                print(f"made node: r={r} pa={pa}")
-            nodes.append(node)
+                print(f"number of nodes to make on layer {j}: {nnodes_this_layer}")
+            for i in range(nnodes_this_layer):
+                pa = i * symmetry_angle / (j + 1)
+                r = rho * fwhm * (j + 1)
+                nodes.append(central_coords.directional_offset_by(pa, r))
+                if verbose:
+                    print(f"made node: r={r} pa={pa}")
+                pbar.update()
 
     if verbose:
         print("grid #  RA (deg)   Dec (deg)")
