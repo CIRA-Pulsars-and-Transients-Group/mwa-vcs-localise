@@ -12,7 +12,6 @@ from astropy.constants import c as sol
 import astropy.units as u
 import matplotlib.pyplot as plt
 from .utils import MWA_LOCATION, form_grid_positions, find_max_baseline
-
 from .array_factor import calcGeometricDelays, calcArrayFactorPower
 from .primary_beam import getPrimaryBeamPower
 
@@ -45,8 +44,9 @@ def main():
         (format: 'hh:mm:ss_dd:mm:ss').
         You may provide multiple sky positions to sample, separating them by
         a single <space>.
-        If a single number is provided, this defines the number of beams to
-        evenly distribute in a ring surrounding the look-direction.""",
+        If no argument provided, will sample the sky around position based on
+        an estimate of the FWHM.""",
+        default=None,
     )
     parser.add_argument(
         "--plot",
@@ -79,12 +79,10 @@ def main():
     target_ras = []
     target_decs = []
 
-    if args.position.isdigit():
-        n = int(args.position) + 1
+    if not args.position:
         target_positions = form_grid_positions(
             look_position,
             max_separation_arcsec=fwhm.to(u.arcsecond).value,
-            nbeams=n,
             nlayers=50,
             overlap=True,
         )
@@ -99,6 +97,7 @@ def main():
             frame="icrs",
             unit=("hourangle", "deg"),
         )
+
     target_positions_altaz = target_positions.transform_to(altaz_frame)
 
     # Compute the array factor (tied-array beam weighting factor).
