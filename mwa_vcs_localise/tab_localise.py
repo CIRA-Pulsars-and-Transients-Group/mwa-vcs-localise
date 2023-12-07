@@ -80,12 +80,12 @@ def main():
     target_decs = []
 
     if args.position.isdigit():
-        n = int(args.position)
+        n = int(args.position) + 1
         target_positions = form_grid_positions(
             look_position,
-            max_separation_arcsec=fwhm.to(u.arcsecond).value / 10,
+            max_separation_arcsec=fwhm.to(u.arcsecond).value,
             nbeams=n,
-            nlayers=10,
+            nlayers=50,
             overlap=True,
         )
     else:
@@ -133,8 +133,10 @@ def main():
             target_positions.dec,
             c=tabp,
             cmap=plt.get_cmap("Reds"),
-            norm="linear",
+            norm="log",
+            vmin=max(tabp.min(), 1e-3),
         )
+
         plt.xlabel("RA (deg)")
         plt.ylabel("Dec (deg)")
         plt.colorbar(label="Zenith-normalised tied-array beam sensitivity")
