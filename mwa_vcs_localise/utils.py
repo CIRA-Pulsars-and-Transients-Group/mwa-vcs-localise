@@ -3,7 +3,7 @@
 ########################################################
 # Licensed under the Academic Free License version 3.0 #
 ########################################################
-
+import multiprocessing
 import numpy as np
 from scipy.spatial import ConvexHull
 from scipy.spatial.distance import cdist
@@ -46,12 +46,29 @@ def make_grid(az0: float, az1: float, za0: float, za1: float, n: int):
     return az, za
 
 
+def create_layer(args) -> SkyCoord:
+    layer_idx, ncore, sym_ang, width, central_coord = args
+    sfact = layer_idx + 1
+    nnodes_this_layer = sfact * ncore
+    nodes = np.empty(nnodes_this_layer, dtype=SkyCoord)
+    for node_idx in range(nnodes_this_layer):
+        new_node = create_node(sfact, node_idx, sym_ang, width, central_coord)
+        nodes[node_idx] = new_node
+    return nodes
+
+
+def create_node(scale, node_idx, sym_ang, width, central_coord) -> SkyCoord:
+    pa = node_idx * sym_ang / scale
+    r = width * scale
+    return central_coord.directional_offset_by(pa, r)
+
+
 def form_grid_positions(
     central_coords: SkyCoord,
     max_separation_arcsec: float = 60.0,
     nlayers: int = 1,
     overlap: bool = False,
-    verbose: bool = False,
+    ncpus: int = None,
 ) -> SkyCoord:
     """Based on a central sky position, tile beams around it
     with a given separation.
@@ -69,10 +86,14 @@ def form_grid_positions(
     :type overlap: bool, optional
     :param verbose: Output extra information, defaults to False
     :type verbose: bool, optional
+    :param ncpus: Number of processes to use when computing sky nodes,
+        defaults to None (use all CPUs)
+    :type ncpus: int, optional
     :return: A SkyCoord object containing all produced tiling beams.
     :rtype: SkyCoord
     """
-    symmetry_angle = Angle(360 * u.deg / 6)
+    nbeams_core = 6
+    symmetry_angle = Angle(360 * u.deg / nbeams_core)
     fwhm = Angle(max_separation_arcsec * u.arcsecond)
 
     if overlap:
@@ -80,34 +101,21 @@ def form_grid_positions(
     else:
         rho = 1
 
-    nodes = [central_coords]
     # sum((j + 1) * (nbeams - 1) for j in range(nlayers)) can be written
     # as the following, given that range(N) = 0, 1, ..., n-1
-    total_nodes = int(nlayers * (nlayers + 1) * 6 / 2)
+    total_nodes = int(nlayers * (nlayers + 1) * nbeams_core / 2)
     print(f"nlayers = {nlayers}, total nodes = {total_nodes}")
 
-    progressbar = tqdm(
-        total=total_nodes,
-        desc="calc. node positions",
-        bar_format="{desc}:{percentage:4.0f}%|{bar:25}{r_bar}",
-    )
-    with progressbar as pbar:
-        for j in range(nlayers):
-            nnodes_this_layer = (j + 1) * 6
-            if verbose:
-                print(f"number of nodes to make on layer {j}: {nnodes_this_layer}")
-            for i in range(nnodes_this_layer):
-                pa = i * symmetry_angle / (j + 1)
-                r = rho * fwhm * (j + 1)
-                nodes.append(central_coords.directional_offset_by(pa, r))
-                if verbose:
-                    print(f"made node: r={r} pa={pa}")
-                pbar.update()
+    pkgs = []
+    for j in range(nlayers):
+        pkgs.append((j, nbeams_core, symmetry_angle, rho * fwhm, central_coords))
 
-    if verbose:
-        print("grid #  RA (deg)   Dec (deg)")
-        for i, n in enumerate(nodes):
-            print(f"{i:<6}  {n.ra.deg:.5f}  {n.dec.deg:.5f}")
+    with multiprocessing.Pool(processes=ncpus) as pool:
+        results = pool.map(create_layer, pkgs)
+
+    # results is a list of numpy arrays, where each element is a SkyCoord object
+    nodes = np.concatenate(results)
+    nodes = np.append(nodes, central_coords)
 
     return SkyCoord(nodes)
 
