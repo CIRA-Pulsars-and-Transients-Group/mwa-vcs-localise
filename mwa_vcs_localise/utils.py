@@ -7,7 +7,7 @@ import multiprocessing
 import numpy as np
 from scipy.spatial import ConvexHull
 from scipy.spatial.distance import cdist
-from astropy.coordinates import EarthLocation, Angle, SkyCoord
+from astropy.coordinates import EarthLocation, Angle, SkyCoord, concatenate
 import astropy.units as u
 from astropy.constants import c as sol
 from tqdm import tqdm
@@ -116,8 +116,9 @@ def form_grid_positions(
     # results is a list of numpy arrays, where each element is a SkyCoord object
     nodes = np.concatenate(results)
     nodes = np.append(nodes, central_coords)
+    print("finished creating nodes")
 
-    return SkyCoord(nodes)
+    return concatenate(nodes)
 
 
 def find_max_baseline(context: MetafitsContext) -> list:
