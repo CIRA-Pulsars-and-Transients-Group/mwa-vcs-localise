@@ -79,11 +79,12 @@ def main():
     target_ras = []
     target_decs = []
 
+    print("Creating sky position samples...")
     if not args.position:
         target_positions = form_grid_positions(
             look_position,
             max_separation_arcsec=fwhm.to(u.arcsecond).value,
-            nlayers=50,
+            nlayers=200,
             overlap=True,
         )
     else:
@@ -97,9 +98,10 @@ def main():
             frame="icrs",
             unit=("hourangle", "deg"),
         )
-
+    print("Converting to AltAz...")
     target_positions_altaz = target_positions.transform_to(altaz_frame)
 
+    print("Computing array factors...")
     # Compute the array factor (tied-array beam weighting factor).
     look_psi = calcGeometricDelays(
         context,
@@ -116,6 +118,7 @@ def main():
     afp = calcArrayFactorPower(look_psi, target_psi)
 
     # Compute the primary beam zenith-normalised power.
+    print("Computing primary beam power...")
     pbp = getPrimaryBeamPower(
         context,
         args.freq,
