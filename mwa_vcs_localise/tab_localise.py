@@ -3,7 +3,7 @@
 ########################################################
 # Licensed under the Academic Free License version 3.0 #
 ########################################################
-
+import time as timer
 import argparse
 import mwalib
 from astropy.coordinates import SkyCoord, AltAz
@@ -79,6 +79,7 @@ def main():
     target_ras = []
     target_decs = []
 
+    t0 = timer.time()
     print("Creating sky position samples...")
     if not args.position:
         target_positions = form_grid_positions(
@@ -98,10 +99,17 @@ def main():
             frame="icrs",
             unit=("hourangle", "deg"),
         )
+    t1 = timer.time()
+    print(f"... took {t1-t0} seconds")
+
     print("Converting to AltAz...")
+    t0 = timer.time()
     target_positions_altaz = target_positions.transform_to(altaz_frame)
+    t1 = timer.time()
+    print(f"... took {t1-t0} seconds")
 
     print("Computing array factors...")
+    t0 = timer.time()
     # Compute the array factor (tied-array beam weighting factor).
     look_psi = calcGeometricDelays(
         context,
@@ -116,15 +124,20 @@ def main():
         target_positions_altaz.az.rad,
     )
     afp = calcArrayFactorPower(look_psi, target_psi)
+    t1 = timer.time()
+    print(f"... took {t1-t0} seconds")
 
     # Compute the primary beam zenith-normalised power.
     print("Computing primary beam power...")
+    t0 = timer.time()
     pbp = getPrimaryBeamPower(
         context,
         args.freq,
         target_positions_altaz.alt.rad,
         target_positions_altaz.az.rad,
     )
+    t1 = timer.time()
+    print(f"... took {t1-t0} seconds")
 
     # Finally, estimate the zenith-normalised tied-array beam power.
     tabp = afp * pbp
