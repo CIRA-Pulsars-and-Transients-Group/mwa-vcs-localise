@@ -7,7 +7,6 @@
 from mwalib import MetafitsContext
 from mwa_hyperbeam import FEEBeam as PrimaryBeam
 import numpy as np
-from .utils import make_grid
 
 
 def getPrimaryBeamPower(
@@ -19,7 +18,7 @@ def getPrimaryBeamPower(
 ):
     za = np.pi / 2 - alt
     beam = PrimaryBeam()
-    sky = np.eye(2)
+    sky = np.eye(2) / 2  # equal halves of the "sky" in each X/Y polarisation
 
     jones = beam.calc_jones_array(
         np.array([az]).flatten(),
