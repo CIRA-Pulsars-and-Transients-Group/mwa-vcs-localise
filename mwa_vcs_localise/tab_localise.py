@@ -6,10 +6,12 @@
 import time as timer
 import argparse
 import mwalib
+import numpy as np
 from astropy.coordinates import SkyCoord, AltAz
 from astropy.time import Time
 from astropy.constants import c as sol
 import astropy.units as u
+from scipy.interpolate import griddata
 import matplotlib.pyplot as plt
 from .utils import MWA_LOCATION, form_grid_positions, find_max_baseline
 from .array_factor import calcGeometricDelays, calcArrayFactorPower
@@ -49,6 +51,14 @@ def main():
         default=None,
     )
     parser.add_argument(
+        "--nlayers",
+        type=int,
+        help="""If not argument provided to -P, this option sets how many
+        circular layers of FWHM-sized cells around the central position to
+        calculate.""",
+        default=100,
+    )
+    parser.add_argument(
         "--plot",
         action="store_true",
         help="Whether to plot the TAB power for each provided point.",
@@ -75,7 +85,8 @@ def main():
     )
     look_position_altaz = look_position.transform_to(altaz_frame)
 
-    # In principle, allow the user to provide N inputs separated by spaces, or just ask for M pointings around the source
+    # In principle, allow the user to provide N inputs separated by spaces, or just
+    # ask for M pointings around the source
     target_ras = []
     target_decs = []
 
@@ -85,7 +96,7 @@ def main():
         target_positions = form_grid_positions(
             look_position,
             max_separation_arcsec=fwhm.to(u.arcsecond).value,
-            nlayers=200,
+            nlayers=args.nlayers,
             overlap=True,
         )
     else:
@@ -136,6 +147,7 @@ def main():
         target_positions_altaz.alt.rad,
         target_positions_altaz.az.rad,
     )
+    print(f"... primary beam max. power = {pbp.max()}")
     t1 = timer.time()
     print(f"... took {t1-t0} seconds")
 
@@ -143,19 +155,52 @@ def main():
     tabp = afp * pbp
 
     if args.plot:
+        print("Plotting sky map...")
+        # grid the data
+        # print("Gridding...")
+        # t0 = timer.time()
+        # x = (target_positions.ra.wrap_at("180d")).deg
+        # y = target_positions.dec.deg
+        # xi_size = 50 * args.nlayers
+        # yi_size = 50 * args.nlayers
+        # print(f"... creating {xi_size}x{yi_size} grid")
+        # print(f"... R.A. span = {x.min():.2f} to {x.max():.2f} deg")
+        # print(f"... Dec. span = {y.min():.2f} to {y.max():.2f} deg")
+        # xi = np.linspace(x.min(), x.max(), xi_size)
+        # yi = np.linspace(y.min(), y.max(), yi_size)
+        # zi = griddata(
+        #     (x, y),
+        #     tabp,
+        #     (xi[None, :], yi[:, None]),
+        #     method="cubic",
+        # )
+        # t1 = timer.time()
+        # print(f"... took {t1-t0} seconds")
+
+        # print("Plotting...")
+        # t0 = timer.time()
+        # extent = (xi.min(), xi.max(), yi.min(), yi.max())
+        # im = plt.imshow(zi, extent=extent, aspect="auto", interpolation="none")
+        # cc = plt.tricontour(x, y, pbp, cmap=plt.get_cmap("Reds_r"))
+
         plt.scatter(
             target_positions.ra,
             target_positions.dec,
             c=tabp,
-            cmap=plt.get_cmap("Reds"),
+            cmap=plt.get_cmap("viridis"),
             norm="log",
             vmin=max(tabp.min(), 1e-3),
         )
 
         plt.xlabel("RA (deg)")
         plt.ylabel("Dec (deg)")
-        plt.colorbar(label="Zenith-normalised tied-array beam sensitivity")
+        # cbar = plt.colorbar(im, label="Zenith-normalised tied-array beam sensitivity")
+        # cbar.add_lines(cc)
+        # plt.clabel(cc)
         plt.tight_layout()
+        t1 = timer.time()
+        print(f"... took {t1-t0} seconds")
+
         plt.show()
 
 
