@@ -30,7 +30,11 @@ def main():
         "-t", dest="time", type=str, help="UTC time of observation (format: ISOT)."
     )
     parser.add_argument(
-        "-f", dest="freq", type=float, help="Observing frequency in Hz."
+        "-f",
+        dest="freq",
+        nargs="+",
+        type=float,
+        help="Observing frequency in Hz. Maximum of 5.",
     )
     parser.add_argument(
         "-L",
@@ -59,43 +63,61 @@ def main():
         default=100,
     )
     parser.add_argument(
+        "--nopb",
+        action="store_true",
+        help="Don't include the primary beam attenuation.",
+    )
+    parser.add_argument(
         "--plot",
         action="store_true",
         help="Whether to plot the TAB power for each provided point.",
     )
 
     args = parser.parse_args()
+    if len(args.freq) > 5:
+        print("Cannot use more than 5 frequencies at a time, please adjust input.")
+        exit(1)
+    freqs = np.array(args.freq)
 
     # Collect meta information and setup configuration.
     context = mwalib.MetafitsContext(args.metafits)
     max_baseline, _, _ = find_max_baseline(context)
-    fwhm = (1.22 * (sol.value / args.freq) / max_baseline) * u.rad
+    fwhm = (1.22 * (sol.value / freqs) / max_baseline) * u.rad
     print(f"maximum baseline (m): {max_baseline}")
     print(f"beam fwhm (arcmin): {fwhm.to(u.arcminute).value}")
     time = Time(args.time, format="isot", scale="utc")
     altaz_frame = AltAz(location=MWA_LOCATION, obstime=time)
 
     # Create the astrometric quantity for the beamformed target direction
-    look_ra, look_dec = args.look.split("_")
-    look_position = SkyCoord(
-        look_ra,
-        look_dec,
+    look_ras = []
+    look_decs = []
+    for p in args.look.split(" "):
+        look_ras.append(p.split("_")[0])
+        look_decs.append(p.split("_")[1])
+
+    look_positions = SkyCoord(
+        look_ras,
+        look_decs,
         frame="icrs",
         unit=("hourangle", "deg"),
     )
-    look_position_altaz = look_position.transform_to(altaz_frame)
+    look_positions_altaz = look_positions.transform_to(altaz_frame)
 
     # In principle, allow the user to provide N inputs separated by spaces, or just
     # ask for M pointings around the source
     target_ras = []
     target_decs = []
 
+    target_positions_freq = []
+
     t0 = timer.time()
-    print("Creating sky position samples...")
+    print(
+        "Creating sky position samples from highest frequency and first look-direction..."
+    )
     if not args.position:
         target_positions = form_grid_positions(
-            look_position,
-            max_separation_arcsec=fwhm.to(u.arcsecond).value,
+            look_positions[0],
+            max_separation_arcsec=(min(fwhm)).to(u.arcsecond).value,
             nlayers=args.nlayers,
             overlap=True,
         )
@@ -119,84 +141,84 @@ def main():
     t1 = timer.time()
     print(f"... took {t1-t0} seconds")
 
-    print("Computing array factors...")
-    t0 = timer.time()
-    # Compute the array factor (tied-array beam weighting factor).
-    look_psi = calcGeometricDelays(
-        context,
-        args.freq,
-        look_position_altaz.alt.rad,
-        look_position_altaz.az.rad,
-    )
-    target_psi = calcGeometricDelays(
-        context,
-        args.freq,
-        target_positions_altaz.alt.rad,
-        target_positions_altaz.az.rad,
-    )
-    afp = calcArrayFactorPower(look_psi, target_psi)
-    t1 = timer.time()
-    print(f"... took {t1-t0} seconds")
+    tabp_look = []
+    for i, lp in enumerate(look_positions_altaz):
+        print(f"\nProcessing look-direction = {look_positions[i]}")
+        tabp_freq = []
+        for j, freq in enumerate(freqs):
+            print(f"Processing frequency = {freq} Hz\n")
+            print("Computing array factors...")
+            t0 = timer.time()
+            # Compute the array factor (tied-array beam weighting factor).
+            look_psi = calcGeometricDelays(
+                context,
+                freq,
+                lp.alt.rad,
+                lp.az.rad,
+            )
+            target_psi = calcGeometricDelays(
+                context,
+                freq,
+                target_positions_altaz.alt.rad,
+                target_positions_altaz.az.rad,
+            )
+            afp = calcArrayFactorPower(look_psi, target_psi)
+            t1 = timer.time()
+            print(f"... took {t1-t0} seconds")
 
-    # Compute the primary beam zenith-normalised power.
-    print("Computing primary beam power...")
-    t0 = timer.time()
-    pbp = getPrimaryBeamPower(
-        context,
-        args.freq,
-        target_positions_altaz.alt.rad,
-        target_positions_altaz.az.rad,
-    )
-    print(f"... primary beam max. power = {pbp.max()}")
-    t1 = timer.time()
-    print(f"... took {t1-t0} seconds")
+            if not args.nopb:
+                # Compute the primary beam zenith-normalised power.
+                print("Computing primary beam power...")
+                t0 = timer.time()
+                pbp = getPrimaryBeamPower(
+                    context,
+                    freq,
+                    target_positions_altaz.alt.rad,
+                    target_positions_altaz.az.rad,
+                )
+                print(f"... primary beam max. power = {pbp.max()}")
+                t1 = timer.time()
+                print(f"... took {t1-t0} seconds")
+            else:
+                pbp = 1.0
 
-    # Finally, estimate the zenith-normalised tied-array beam power.
-    tabp = afp * pbp
+            # Finally, estimate the zenith-normalised tied-array beam power.
+            tabp = afp * pbp
+            tabp_freq.append(tabp)
+        tabp_look.append(tabp_freq)
+
+    tabp_look = np.array(tabp_look)
+    print(tabp_look.shape)
 
     if args.plot:
+        if args.nopb:
+            label = "Array factor power"
+        else:
+            label = "Zenith-normalised tied-array beam sensitivity"
+
         print("Plotting sky map...")
-        # grid the data
-        # print("Gridding...")
-        # t0 = timer.time()
-        # x = (target_positions.ra.wrap_at("180d")).deg
-        # y = target_positions.dec.deg
-        # xi_size = 50 * args.nlayers
-        # yi_size = 50 * args.nlayers
-        # print(f"... creating {xi_size}x{yi_size} grid")
-        # print(f"... R.A. span = {x.min():.2f} to {x.max():.2f} deg")
-        # print(f"... Dec. span = {y.min():.2f} to {y.max():.2f} deg")
-        # xi = np.linspace(x.min(), x.max(), xi_size)
-        # yi = np.linspace(y.min(), y.max(), yi_size)
-        # zi = griddata(
-        #     (x, y),
-        #     tabp,
-        #     (xi[None, :], yi[:, None]),
-        #     method="cubic",
-        # )
-        # t1 = timer.time()
-        # print(f"... took {t1-t0} seconds")
-
-        # print("Plotting...")
-        # t0 = timer.time()
-        # extent = (xi.min(), xi.max(), yi.min(), yi.max())
-        # im = plt.imshow(zi, extent=extent, aspect="auto", interpolation="none")
-        # cc = plt.tricontour(x, y, pbp, cmap=plt.get_cmap("Reds_r"))
-
-        plt.scatter(
-            target_positions.ra,
-            target_positions.dec,
-            c=tabp,
-            cmap=plt.get_cmap("viridis"),
+        product = np.prod(tabp_look.mean(axis=1), axis=0)
+        tab_map = plt.scatter(
+            target_positions.ra.deg,
+            target_positions.dec.deg,
+            c=product,
+            s=50,
+            marker="o",
+            alpha=0.5,
+            cmap="viridis",
             norm="log",
-            vmin=max(tabp.min(), 1e-3),
+            # vmin=min(product.min(), 1e-3),
+        )
+        plt.scatter(
+            look_positions.ra.deg,
+            look_positions.dec.deg,
+            c="magenta",
+            marker="x",
         )
 
         plt.xlabel("RA (deg)")
         plt.ylabel("Dec (deg)")
-        # cbar = plt.colorbar(im, label="Zenith-normalised tied-array beam sensitivity")
-        # cbar.add_lines(cc)
-        # plt.clabel(cc)
+        cbar = plt.colorbar(tab_map, label=label)
         plt.tight_layout()
         t1 = timer.time()
         print(f"... took {t1-t0} seconds")
