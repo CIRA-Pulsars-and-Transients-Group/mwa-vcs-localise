@@ -11,7 +11,6 @@ from astropy.coordinates import SkyCoord, AltAz
 from astropy.time import Time
 from astropy.constants import c as sol
 import astropy.units as u
-from scipy.interpolate import griddata
 import matplotlib.pyplot as plt
 from .utils import MWA_LOCATION, form_grid_positions, find_max_baseline
 from .array_factor import calcGeometricDelays, calcArrayFactorPower
