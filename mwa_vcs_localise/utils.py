@@ -9,8 +9,6 @@ from scipy.spatial import ConvexHull
 from scipy.spatial.distance import cdist
 from astropy.coordinates import EarthLocation, Angle, SkyCoord, concatenate
 import astropy.units as u
-from astropy.constants import c as sol
-from tqdm import tqdm
 from mwalib import MetafitsContext
 
 MWA_CENTRE_LON = 116.67081524 * u.deg
