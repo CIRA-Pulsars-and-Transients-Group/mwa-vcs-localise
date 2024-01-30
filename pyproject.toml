@@ -28,8 +28,7 @@ dependencies = [
 ]
 
 [project.scripts]
-mwa_tab_loc = "mwa_vcs_localise:tab_localise.main"
-
+mwa_tab_loc = "mwa_vcs_localise:make_tab_pattern.main"
 
 [project.urls]
 Repository = "https://github.com/CIRA-Pulsars-and-Transients-Group/mwa-vcs-localise.git"
