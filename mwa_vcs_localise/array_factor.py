@@ -47,14 +47,12 @@ def calcArrayFactorPower(look_w, target_w):
         target direction.
     :rtype: np.ndarray
     """
-    sum_over_antennas = np.dot(np.conjugate(look_w), target_w)
-    # From the numpy.dot documentation:
-    #
-    #    "If `a` is an N-D array and `b` is a 1-D array,
-    #     it is a sum product over the last axis of `a` and `b`."
-    #
-    # which is ideal in our case because `a` is our look direction
-    # and `b` is our (potentially many) target directions.
+    # At this stage, the shape of target_w = (nant, n_ra, n_dec) and while the shape of look_w = (nant,)
+    sum_over_antennas = np.tensordot(np.conjugate(look_w), target_w, axes=1)
+    # From the numpy.tensordot documentation:
+    #    The third argument can be a single non-negative integer_like scalar, N;
+    #    if it is such, then the last N dimensions of a and the first N dimensions
+    #    of b are summed over.
 
     # The array factor power is normalised to the number of elements
     # included in the sum (i.e., length of the `look_w` vector).
