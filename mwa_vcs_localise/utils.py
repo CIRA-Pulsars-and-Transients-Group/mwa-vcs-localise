@@ -4,6 +4,9 @@
 # Licensed under the Academic Free License version 3.0 #
 ########################################################
 import multiprocessing
+
+import matplotlib.pyplot as plt
+
 import numpy as np
 from scipy.spatial import ConvexHull
 from scipy.spatial.distance import cdist
@@ -19,29 +22,6 @@ MWA_CENTRE_CABLE_LEN = 0.0 * u.m
 MWA_LOCATION = EarthLocation.from_geodetic(
     lon=MWA_CENTRE_LON, lat=MWA_CENTRE_LAT, height=MWA_CENTRE_H
 )
-
-
-def make_grid(az0: float, az1: float, za0: float, za1: float, n: int):
-    """Create a mesh-grid in 2D with n cells on each side.
-
-    :param az0: Starting azimuthal coordinate.
-    :type az0: float
-    :param az1: End azimuthal coordinate.
-    :type az1: float
-    :param za0: Starting zenith angle coordinate.
-    :type za0: float
-    :param za1: End zenith angle coordinate.
-    :type za1: float
-    :param n: Number of cells on each side of the grid.
-    :type n: int
-    :return: The corresponding azimuth and zenith angle grids.
-    :rtype: List[np.array, np.array]
-    """
-    _az = np.linspace(az0, az1, n)
-    _za = np.linspace(za0, za1, n)
-    az, za = np.meshgrid(_az, _za)
-
-    return az, za
 
 
 def create_layer(args) -> SkyCoord:
@@ -136,6 +116,9 @@ def find_max_baseline(context: MetafitsContext) -> list:
             for rf in context.rf_inputs[::2]
         ]
     )
+    tile_flags = np.array([rf.flagged for rf in context.rf_inputs[::2]])
+    tile_positions = np.delete(tile_positions, np.where(tile_flags == True), axis=0)
+
     # Create the convex hull
     hull = ConvexHull(tile_positions)
 
@@ -150,3 +133,42 @@ def find_max_baseline(context: MetafitsContext) -> list:
     bestpair = np.unravel_index(hdist.argmax(), hdist.shape)
 
     return [hdist.max(), hullpoints[bestpair[0]], hullpoints[bestpair[1]]]
+
+
+def plot_array_layout(context: MetafitsContext) -> None:
+    tile_positions = np.array(
+        [
+            np.array([rf.east_m, rf.north_m, rf.height_m])
+            for rf in context.rf_inputs[::2]
+        ]
+    )
+    tile_flags = np.array([rf.flagged for rf in context.rf_inputs[::2]])
+    max_baseline = find_max_baseline(context)[0]
+
+    okay_tiles_n = np.ma.masked_array(tile_positions[:, 1], mask=tile_flags)
+    okay_tiles_e = np.ma.masked_array(tile_positions[:, 0], mask=tile_flags)
+    bad_tiles_n = np.ma.masked_array(tile_positions[:, 1], mask=~tile_flags)
+    bad_tiles_e = np.ma.masked_array(tile_positions[:, 0], mask=~tile_flags)
+
+    fig = plt.figure(figsize=plt.figaspect(1))
+    fig.add_subplot()
+    plt.scatter(okay_tiles_e, okay_tiles_n, zorder=1000, s=10, marker="x", color="k")
+    plt.scatter(bad_tiles_e, bad_tiles_n, zorder=1000, s=10, marker="x", color="r")
+    plt.xlabel("East coordinate from array centre (m)", fontsize=14)
+    plt.ylabel("North coordiante from array centre (m)", fontsize=14)
+    plt.title(f"{context.sched_start_utc}")
+    plt.minorticks_on()
+    plt.tick_params(labelsize=12)
+    plt.grid()
+    plt.grid(which="minor", ls=":")
+    bt = plt.text(
+        0.97,
+        0.07,
+        f"Max. baseline ~ {max_baseline:.0f} m",
+        transform=plt.gca().transAxes,
+        va="top",
+        ha="right",
+    )
+    bt.set_bbox(dict(facecolor="w", alpha=0.7, edgecolor="none"))
+    plt.savefig(f"{context.obs_id}_array_layout.png", dpi=200, bbox_inches="tight")
+    plt.close(fig)
