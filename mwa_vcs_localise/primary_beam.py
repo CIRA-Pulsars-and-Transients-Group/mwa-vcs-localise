@@ -18,8 +18,9 @@ def getPrimaryBeamPower(
 ):
     za = np.pi / 2 - alt
     beam = PrimaryBeam()
-    sky = np.eye(2) / 2  # equal halves of the "sky" in each X/Y polarisation
+    S = np.eye(2) / 2  # equal halves of the "sky" in each X/Y polarisation
 
+    print("... calculating Jones matrices")
     jones = beam.calc_jones_array(
         np.array([az]).flatten(),
         np.array([za]).flatten(),
@@ -28,6 +29,13 @@ def getPrimaryBeamPower(
         np.ones_like(metadata.delays),
         zenithNorm,
     )
-    jmats = [np.matrix(j.reshape((2, 2))) for j in jones]
-    power = [np.real(np.trace(jmat @ sky @ jmat.H)) for jmat in jmats]
-    return np.array(power)
+    print("... creating sky response")
+    J = jones.reshape(-1, 2, 2)  # shape = (npix, 2, 2)
+    K = np.conjugate(J).T  # shape = (2, 2, npix)
+    # This einsum does the following operations:
+    # - ij,jkN does the matrix multiplication S @ K, but keeps the dimension N
+    # - Nki does the matrix multiplication of each of the N matrices from above, keeping the N outputs
+    # - the ->N implies that we want the traces of the N products
+    power = np.einsum("Nki,ij,jkN->N", J, S, K).real
+
+    return power
