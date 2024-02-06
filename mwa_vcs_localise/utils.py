@@ -164,7 +164,7 @@ def plot_array_layout(context: MetafitsContext) -> None:
     bt = plt.text(
         0.97,
         0.07,
-        f"Max. baseline ~ {max_baseline:.0f} m",
+        rf"Max. baseline $\approx$ {max_baseline:.0f} m",
         transform=plt.gca().transAxes,
         va="top",
         ha="right",
