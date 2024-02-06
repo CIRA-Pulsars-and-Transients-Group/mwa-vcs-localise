@@ -20,8 +20,18 @@ from .utils import (
     find_max_baseline,
     plot_array_layout,
 )
-from .array_factor import calcGeometricDelays, calcArrayFactorPower
+from .array_factor import (
+    extractWorkingTilePositions,
+    calcGeometricDelays,
+    calcArrayFactorPower,
+)
 from .primary_beam import getPrimaryBeamPower
+
+plt.rcParams.update(
+    {
+        "font.family": "serif",
+    }
+)
 
 
 def main():
@@ -101,6 +111,7 @@ def main():
     # Collect meta information and setup configuration.
     context = mwalib.MetafitsContext(args.metafits)
     max_baseline, _, _ = find_max_baseline(context)
+    tile_positions = extractWorkingTilePositions(context)
     fwhm = (1.22 * (sol.value / freqs) / max_baseline) * u.rad
     print(f"maximum baseline (m): {max_baseline}")
     print(f"beam fwhm (arcmin): {fwhm.to(u.arcminute).value}")
@@ -144,15 +155,23 @@ def main():
         grid_step_ra = grid_step[0] * u.arcsec
         grid_step_dec = grid_step[1] * u.arcsec
         spherical_offset = box[0].spherical_offsets_to(box[1])
-        print(spherical_offset[0].to(u.arcsec), spherical_offset[1].to(u.arcsec))
         n_ra = int(np.abs(spherical_offset[0].to(u.arcsec) / grid_step_ra))
         n_dec = int(np.abs(spherical_offset[1].to(u.arcsec) / grid_step_dec))
-        print(n_ra, n_dec)
+
+        if box.ra[0] > 180 * u.deg:
+            print("will wrap at RA = 0h such that grid spans -180 to +180 deg")
+            box_ra = box.ra.deg
+            box_ra[box_ra >= 180] -= 360
+            box_dec = box.dec.deg
+        else:
+            box_ra = box.ra.deg
+            box_dec = box.dec.deg
 
         grid_ra, grid_dec = np.meshgrid(
-            np.linspace(box.ra[0].deg, box.ra[1].deg, n_ra),
-            np.linspace(box.dec[0].deg, box.dec[1].deg, n_dec),
+            np.linspace(box_ra[0], box_ra[1], n_ra),
+            np.linspace(box_dec[0], box_dec[1], n_dec),
         )
+
         target_positions = SkyCoord(
             grid_ra,
             grid_dec,
@@ -180,6 +199,7 @@ def main():
             frame="icrs",
             unit=("hourangle", "deg"),
         )
+
     t1 = timer.time()
     print(f"... took {t1-t0} seconds")
 
@@ -190,28 +210,28 @@ def main():
     print(f"... took {t1-t0} seconds")
 
     tabp_look = []
+    afp_look = []
     for i, lp in enumerate(look_positions_altaz):
         print(f"\nProcessing look-direction = {look_positions[i]}")
         tabp_freq = []
+        afp_freq = []
         for j, freq in enumerate(freqs):
             print(f"Processing frequency = {freq} Hz\n")
             print("Computing array factors...")
             t0 = timer.time()
             # Compute the array factor (tied-array beam weighting factor).
             look_psi = calcGeometricDelays(
-                context,
+                tile_positions,
                 freq,
                 lp.alt.rad,
                 lp.az.rad,
             )
             target_psi = calcGeometricDelays(
-                context,
+                tile_positions,
                 freq,
                 target_positions_altaz.alt.rad,
                 target_positions_altaz.az.rad,
             )
-            print(look_psi.shape)
-            print(target_psi.shape)
             afp = calcArrayFactorPower(look_psi, target_psi)
             t1 = timer.time()
             print(f"... took {t1-t0} seconds")
@@ -238,10 +258,14 @@ def main():
             else:
                 tabp = afp * pbp.reshape(afp.shape)
             tabp_freq.append(tabp)
+            afp_freq.append(afp)
         tabp_look.append(tabp_freq)
+        afp_look.append(afp_freq)
 
     tabp_look = np.array(tabp_look)
-    print(tabp_look.shape)
+    afp_look = np.array(afp_look)
+    # print(f"afp shape = {afp_look.shape}")
+    # print(f"tab shape = {tabp_look.shape}")
 
     if args.plot:
         if args.nopb:
@@ -250,38 +274,73 @@ def main():
             label = "Zenith-normalised tied-array beam power"
 
         print("Plotting sky map...")
+        product = np.sum(tabp_look.mean(axis=1), axis=0)
+        # snr = [26, 13, 21, 8, 10, 8, 6]
+        # print(snr, len(snr))
+        # clip_mask = np.zeros((n_ra, n_dec)).T
+        # for i, tab in enumerate(tabp_look.mean(axis=1)):
+        #     tab_mask = np.zeros_like(tab)
+        #     tab_mask[tab >= 0.1] = snr[i]
+        #     clip_mask += tab_mask
+        # clip_mask[clip_mask <= 6] = np.nan
+        # # product = np.prod(tabp_look.mean(axis=1), axis=0)
 
-        product = np.prod(tabp_look.mean(axis=1), axis=0)
+        # plt.imshow(
+        #     clip_mask,
+        #     aspect="auto",
+        #     extent=[
+        #         grid_ra.min(),
+        #         grid_ra.max(),
+        #         grid_dec.min(),
+        #         grid_dec.max(),
+        #     ],
+        # )
+        # plt.savefig("mask.png", bbox_inches="tight")
 
         fig = plt.figure()
         ax = fig.add_subplot()
         ctr_levels = [0.01, 0.1, 0.3, 0.5, 0.8, 1]
         cmap = plt.get_cmap("Greys")
 
+        map_extent = [
+            grid_ra.min(),
+            grid_ra.max(),
+            grid_dec.min(),
+            grid_dec.max(),
+        ]
+        print(map_extent)
+
         tab_map = ax.imshow(
-            product[::-1],
+            product,
             aspect="auto",
             interpolation="none",
-            origin="lower",
-            extent=[
-                target_positions.ra.deg.min(),
-                target_positions.ra.deg.max(),
-                target_positions.dec.deg.min(),
-                target_positions.dec.deg.max(),
-            ],
+            # origin="lower",
+            extent=map_extent,
             cmap=cmap,
             norm="log",
             vmin=min(ctr_levels),
             vmax=max(ctr_levels),
         )
-        tab_ctr = ax.contour(
-            target_positions.ra.deg,
-            target_positions.dec.deg,
-            product,
-            levels=ctr_levels[1:-1],
-            cmap="plasma",
-            norm="log",
-        )
+
+        # if not args.nopb and len(freqs) == 1:
+        #     pb_ctr = ax.contour(
+        #         grid_ra,
+        #         grid_dec,
+        #         pbp.reshape(afp.shape),
+        #         levels=6,
+        #         colors="black",
+        #         linestyles="dotted",
+        #         norm="log",
+        #     )
+        for ld in tabp_look.mean(axis=1):
+            tab_ctr = ax.contour(
+                grid_ra,
+                grid_dec,
+                ld,
+                levels=ctr_levels[1:-1],
+                cmap="plasma",
+                norm="log",
+            )
 
         # tab_map = ax.tricontourf(
         #     target_positions.ra.deg,
@@ -318,6 +377,8 @@ def main():
             extend="min",
         )
         cbar.add_lines(tab_ctr)
+        # if not args.nopb and len(freqs) == 1:
+        #     ax.clabel(pb_ctr, fmt="%g", fontsize=10)
         cbar.set_label(fontsize=12, label=label)
         cbar.ax.tick_params(labelsize=11)
 
@@ -334,6 +395,146 @@ def main():
         plt.savefig(f"{oname_base}.png", dpi=200, bbox_inches="tight")
         t1 = timer.time()
         print(f"... took {t1-t0} seconds")
+
+        if not args.nopb and len(freqs) == 1:
+            print("Plotting beam slices...")
+            fig.clear()
+            ax = fig.add_subplot()
+            pb_map = ax.imshow(
+                pbp.reshape(afp.shape),
+                aspect="auto",
+                interpolation="none",
+                # origin="lower",
+                extent=map_extent,
+                cmap=cmap,
+                # norm="log",
+                # vmin=min(ctr_levels),
+                # vmax=max(ctr_levels),
+            )
+            cbar = plt.colorbar(
+                pb_map,
+                # ticks=ctr_levels,
+                # format=mticker.ScalarFormatter(),
+                # extend="min",
+            )
+            # cbar.add_lines(tab_ctr)
+            cbar.set_label(fontsize=12, label="Zenith-normalised primary beam power")
+            cbar.ax.tick_params(labelsize=11)
+
+            ax.set_xlabel("Right Ascension (deg)", fontsize=14)
+            ax.set_ylabel("Declination (deg)", fontsize=14)
+            ax.tick_params(labelsize=12)
+            plt.savefig(f"{context.obs_id}_field_pb.png", dpi=200, bbox_inches="tight")
+            plt.close(fig)
+
+            fig, (ax1, ax2) = plt.subplots(2, 1)
+
+            ra_trace_afp = np.prod(afp_look.mean(axis=1), axis=0).mean(axis=0)
+            ra_trace_tab = product.mean(axis=0)
+            dec_trace_afp = np.prod(afp_look.mean(axis=1), axis=0).mean(axis=1)
+            dec_trace_tab = product.mean(axis=1)
+            # ax1.plot(
+            #     np.linspace(box_ra[0], box_ra[1], n_ra),
+            #     ra_trace_afp,
+            #     label="AFP",
+            # )
+            # ax1.plot(
+            #     np.linspace(box_ra[0], box_ra[1], n_ra),
+            #     (ra_trace_tab / ra_trace_tab.max()) * ra_trace_afp.max(),
+            #     label="TAB (Scaled)",
+            #     ls="--",
+            # )
+            dec_linear = np.linspace(box_dec[0], box_dec[1], n_dec)
+            ra_linear = np.linspace(box_ra[0], box_ra[1], n_ra)
+            ax1.plot(
+                ra_linear,
+                product[n_dec // 2, :],
+                label=f"Slice (dec={dec_linear[n_dec // 2]:g}d)",
+                color="C0",
+                ls="-",
+            )
+            ax1.plot(
+                ra_linear,
+                product[n_dec // 2 - 50, :],
+                label=f"Slice (dec={dec_linear[n_dec // 2 - 50]:g}d)",
+                color="C1",
+                ls="-",
+            )
+            # ax1.plot(
+            #     ra_linear,
+            #     product[n_dec // 2 + 50, :],
+            #     label=f"Slice (dec={dec_linear[n_dec // 2 + 50]:g}d)",
+            #     color="C1",
+            #     ls="--",
+            # )
+            ax1.plot(
+                ra_linear,
+                product[n_dec // 2 - 100, :],
+                label=f"Slice (dec={dec_linear[n_dec // 2 - 100]:g}d)",
+                color="C2",
+                ls="-",
+            )
+            # ax1.plot(
+            #     ra_linear,
+            #     product[n_dec // 2 + 100, :],
+            #     label=f"Slice (dec={dec_linear[n_dec // 2 + 100]:g}d)",
+            #     color="C2",
+            #     ls="--",
+            # )
+
+            # ax2.plot(
+            #     dec_linear,
+            #     dec_trace_afp,
+            #     label="AFP",
+            # )
+            # ax2.plot(
+            #     dec_linear,
+            #     (dec_trace_tab / dec_trace_tab.max()) * dec_trace_afp.max(),
+            #     label="TAB (Scaled)",
+            #     ls="--",
+            # )
+            ax2.plot(
+                dec_linear,
+                product[:, n_ra // 2],
+                label=f"Slice (ra={ra_linear[n_ra // 2]:g}d)",
+                color="C0",
+                ls="-",
+            )
+            ax2.plot(
+                dec_linear,
+                product[:, n_ra // 2 - 50],
+                label=f"Slice (ra={ra_linear[n_ra // 2 - 50]:g}d)",
+                color="C1",
+                ls="-",
+            )
+            # ax2.plot(
+            #     dec_linear,
+            #     product[:, n_ra // 2 + 50],
+            #     label=f"Slice (ra={ra_linear[n_ra // 2 + 50]:g}d)",
+            #     color="C1",
+            #     ls="--",
+            # )
+            ax2.plot(
+                dec_linear,
+                product[:, n_ra // 2 - 100],
+                label=f"Slice (ra={ra_linear[n_ra // 2 - 100]:g}d)",
+                color="C2",
+                ls="-",
+            )
+            # ax2.plot(
+            #     dec_linear,
+            #     product[:, n_ra // 2 + 100],
+            #     label=f"Slice (ra={ra_linear[n_ra // 2 + 100]:g}d)",
+            #     color="C2",
+            #     ls="--",
+            # )
+            ax1.set_xlabel("Right Ascension (deg)")
+            ax2.set_xlabel("Declination (deg)")
+            for ax in (ax1, ax2):
+                # ax.set_ylim(0, None)
+                ax.legend(loc="upper right")
+            plt.tight_layout()
+            plt.savefig(f"{context.obs_id}_pattern_cuts.png")
 
 
 if __name__ == "__main__":
