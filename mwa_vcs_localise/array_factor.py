@@ -62,11 +62,14 @@ def calcGeometricDelays(positions: np.ndarray, freq_hz: float, alt: float, az: f
     :type positions: np.ndarray
     :param freq_hz: Observing radio frequency, in Hz.
     :type freq_hz: float
-    :param alt: Desired altitude for the pointing direction, in radians. Can be an array.
+    :param alt: Desired altitude for the pointing direction, in radians.
+                Can be an array.
     :type alt: np.ndarray, float
-    :param az: Desired azimuth for the pointing direction, in radians. Can be an array.
+    :param az: Desired azimuth for the pointing direction, in radians.
+               Can be an array.
     :type az: np.ndarray, float
-    :return: The required phasors needed to rotate the element patterns to each requested az/alt pair.
+    :return: The required phasors needed to rotate the element patterns to
+             each requested az/alt pair.
     :rtype: np.ndarray, complex
     """
     # Create the unit vector(s)
@@ -84,6 +87,10 @@ def calcGeometricDelays(positions: np.ndarray, freq_hz: float, alt: float, az: f
     # dimensionality of the alt/az grid and continue using
     # broadcasting rules efficiently.)
     w = np.tensordot(positions, u, axes=1)
+    # From the numpy.tensordot documentation:
+    #    The third argument can be a single non-negative integer_like scalar, N;
+    #    if it is such, then the last N dimensions of a and the first N dimensions
+    #    of b are summed over.
 
     # Convert to a time delay
     dt = w / sol.value
