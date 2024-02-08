@@ -108,20 +108,22 @@ def main():
         grid_box = args.gridbox.split(" ")[:-2]
         grid_step = args.gridbox.split(" ")[-2:]
 
+    tt0 = timer.time()
+    print("Preparing metadata...")
     # Collect meta information and setup configuration.
     context = mwalib.MetafitsContext(args.metafits)
     max_baseline, _, _ = find_max_baseline(context)
     tile_positions = extractWorkingTilePositions(context)
     fwhm = (1.22 * (sol.value / freqs) / max_baseline) * u.rad
-    print(f"maximum baseline (m): {max_baseline}")
-    print(f"beam fwhm (arcmin): {fwhm.to(u.arcminute).value}")
+    print(f"... maximum baseline (m): {max_baseline}")
+    print(f"... beam fwhm (arcmin): {fwhm.to(u.arcminute).value}")
     time = Time(args.time, format="isot", scale="utc")
     altaz_frame = AltAz(location=MWA_LOCATION, obstime=time)
-
+    print("... plotting array layout")
     plot_array_layout(context)
-    # exit()
 
     # Create the astrometric quantity for the beamformed target direction
+    print("Creating look-direction vector...")
     look_ras = []
     look_decs = []
     for p in args.look.split(" "):
@@ -134,7 +136,11 @@ def main():
         frame="icrs",
         unit=("hourangle", "deg"),
     )
+    print("Converting to AltAz...")
+    t0 = timer.time()
     look_positions_altaz = look_positions.transform_to(altaz_frame)
+    t1 = timer.time()
+    print(f"... took {t1-t0} seconds")
 
     # In principle, allow the user to provide N inputs separated by spaces, or just
     # ask for M pointings around the source
@@ -143,7 +149,7 @@ def main():
 
     t0 = timer.time()
     print(
-        "Creating sky position samples from highest frequency and first look-direction..."
+        "Creating sky position vectors from highest frequency and first look-direction..."
     )
     if not args.position and args.gridbox:
         box = SkyCoord(
@@ -159,7 +165,7 @@ def main():
         n_dec = int(np.abs(spherical_offset[1].to(u.arcsec) / grid_step_dec))
 
         if box.ra[0] > 180 * u.deg:
-            print("will wrap at RA = 0h such that grid spans -180 to +180 deg")
+            print("... will wrap at RA = 0h such that grid spans -180 to +180 deg")
             box_ra = box.ra.deg
             box_ra[box_ra >= 180] -= 360
             box_dec = box.dec.deg
@@ -178,7 +184,7 @@ def main():
             frame="icrs",
             unit=("deg", "deg"),
         )
-        print(f"target positions array shape, (nRA, nDec) = {n_ra, n_dec}")
+        print(f"... target positions array shape, (nRA, nDec) = {n_ra, n_dec}")
 
     elif not args.position and args.gridbox is None:
         target_positions = form_grid_positions(
@@ -199,7 +205,6 @@ def main():
             frame="icrs",
             unit=("hourangle", "deg"),
         )
-
     t1 = timer.time()
     print(f"... took {t1-t0} seconds")
 
@@ -212,11 +217,15 @@ def main():
     tabp_look = []
     afp_look = []
     for i, lp in enumerate(look_positions_altaz):
-        print(f"\nProcessing look-direction = {look_positions[i]}")
+        print(
+            "Processing look-direction = "
+            f"{look_positions[i].ra.to_string(u.hour)} "
+            f"{look_positions[i].dec.to_string(u.degree, alwayssign=True)}"
+        )
         tabp_freq = []
         afp_freq = []
         for j, freq in enumerate(freqs):
-            print(f"Processing frequency = {freq} Hz\n")
+            print(f"Processing frequency = {freq} Hz")
             print("Computing array factors...")
             t0 = timer.time()
             # Compute the array factor (tied-array beam weighting factor).
@@ -246,7 +255,7 @@ def main():
                     target_positions_altaz.alt.rad,
                     target_positions_altaz.az.rad,
                 )
-                print(f"... primary beam max. power = {pbp.max()}")
+                print(f"... primary beam max. in-field power = {pbp.max():.3f}")
                 t1 = timer.time()
                 print(f"... took {t1-t0} seconds")
             else:
@@ -308,7 +317,6 @@ def main():
             grid_dec.min(),
             grid_dec.max(),
         ]
-        print(map_extent)
 
         tab_map = ax.imshow(
             product,
@@ -393,8 +401,6 @@ def main():
             oname_base += "_multifreq"
 
         plt.savefig(f"{oname_base}.png", dpi=200, bbox_inches="tight")
-        t1 = timer.time()
-        print(f"... took {t1-t0} seconds")
 
         if not args.nopb and len(freqs) == 1:
             print("Plotting beam slices...")
@@ -535,6 +541,9 @@ def main():
                 ax.legend(loc="upper right")
             plt.tight_layout()
             plt.savefig(f"{context.obs_id}_pattern_cuts.png")
+
+    tt1 = timer.time()
+    print(f"Done!! (Took {tt1-tt0} seconds.)\n")
 
 
 if __name__ == "__main__":
