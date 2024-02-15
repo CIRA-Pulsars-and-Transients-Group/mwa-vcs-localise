@@ -19,6 +19,7 @@ from .utils import (
     form_grid_positions,
     find_max_baseline,
     plot_array_layout,
+    makeMaskFromWeightedPatterns,
 )
 from .array_factor import (
     extractWorkingTilePositions,
@@ -283,16 +284,11 @@ def main():
             label = "Zenith-normalised tied-array beam power"
 
         print("Plotting sky map...")
-        product = np.sum(tabp_look.mean(axis=1), axis=0)
-        # snr = [26, 13, 21, 8, 10, 8, 6]
-        # print(snr, len(snr))
-        # clip_mask = np.zeros((n_ra, n_dec)).T
-        # for i, tab in enumerate(tabp_look.mean(axis=1)):
-        #     tab_mask = np.zeros_like(tab)
-        #     tab_mask[tab >= 0.1] = snr[i]
-        #     clip_mask += tab_mask
-        # clip_mask[clip_mask <= 6] = np.nan
-        # # product = np.prod(tabp_look.mean(axis=1), axis=0)
+
+        # snr = [13, 26, 21, 10, 8, 8]
+        # clip_mask = makeMaskFromWeightedPatterns(
+        #     tabp_look.mean(axis=1), snr, snr_percentile=75
+        # )
 
         # plt.imshow(
         #     clip_mask,
@@ -304,11 +300,47 @@ def main():
         #         grid_dec.max(),
         #     ],
         # )
-        # plt.savefig("mask.png", bbox_inches="tight")
+        # plt.colorbar()
+        # plt.contour(
+        #     grid_ra,
+        #     grid_dec,
+        #     clip_mask,
+        #     levels=np.percentile(clip_mask, [50, 80]),
+        #     cmap=plt.get_cmap("Reds"),
+        # )
+        # plt.scatter(
+        #     look_positions[0].ra.deg,
+        #     look_positions[0].dec.deg,
+        #     marker="x",
+        #     c="r",
+        # )
+        # plt.errorbar(
+        #     73.0029167,
+        #     -34.3116667,
+        #     xerr=0.00125,
+        #     yerr=0.00111,
+        #     marker="+",
+        #     c="C1",
+        # )
+        # from matplotlib.patches import Circle
+
+        # circ = Circle(
+        #     xy=(73.0029167, -34.3116667),
+        #     radius=(3 * u.arcmin).to(u.deg).value,
+        #     facecolor="none",
+        #     edgecolor="C1",
+        # )
+        # plt.gca().add_patch(circ)
+        # plt.xlabel("Right Ascension (deg)")
+        # plt.ylabel("Declination (deg)")
+        # plt.show()
+        # plt.savefig("mask.png", bbox_inches="tight", dpi=150)
+
+        product = np.sum(tabp_look.mean(axis=1), axis=0)
 
         fig = plt.figure()
         ax = fig.add_subplot()
-        ctr_levels = [0.01, 0.1, 0.3, 0.5, 0.8, 1]
+        ctr_levels = [0.01, 0.1, 0.25, 0.5, 0.8, 1]
         cmap = plt.get_cmap("Greys")
 
         map_extent = [
@@ -345,11 +377,18 @@ def main():
                 grid_ra,
                 grid_dec,
                 ld,
-                levels=ctr_levels[1:-1],
+                levels=ctr_levels[2:-1],
                 cmap="plasma",
                 norm="log",
             )
-
+        # ax.errorbar(
+        #     73.0029167,
+        #     -34.3116667,
+        #     xerr=0.00125,
+        #     yerr=0.00111,
+        #     marker="+",
+        #     c="C1",
+        # )
         # tab_map = ax.tricontourf(
         #     target_positions.ra.deg,
         #     target_positions.dec.deg,
