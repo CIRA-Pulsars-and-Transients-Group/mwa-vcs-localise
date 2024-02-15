@@ -172,3 +172,21 @@ def plot_array_layout(context: MetafitsContext) -> None:
     bt.set_bbox(dict(facecolor="w", alpha=0.7, edgecolor="none"))
     plt.savefig(f"{context.obs_id}_array_layout.png", dpi=200, bbox_inches="tight")
     plt.close(fig)
+
+
+def makeMaskFromWeightedPatterns(
+    tab_collection: list,
+    snr_collection: list,
+    tab_threshold: float = 0.1,
+    snr_percentile: int = 95,
+):
+    clip_mask = np.zeros_like(tab_collection[0])
+    ntab = len(tab_collection)
+    for i, tab in enumerate(tab_collection):
+        tab_mask = np.zeros_like(tab)
+        tab_mask[tab >= tab_threshold] = snr_collection[i]
+        clip_mask += tab_mask
+    clip_mask[clip_mask < 2] = np.nan
+    clip_mask[clip_mask < np.nanpercentile(clip_mask, snr_percentile)] = np.nan
+
+    return clip_mask
