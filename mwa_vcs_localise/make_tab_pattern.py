@@ -178,7 +178,7 @@ def main():
             np.linspace(box_ra[0], box_ra[1], n_ra),
             np.linspace(box_dec[0], box_dec[1], n_dec),
         )
-
+        np.savez("grid",grid_ra,grid_dec)
         target_positions = SkyCoord(
             grid_ra,
             grid_dec,
@@ -337,7 +337,7 @@ def main():
         # plt.savefig("mask.png", bbox_inches="tight", dpi=150)
 
         product = np.sum(tabp_look.mean(axis=1), axis=0)
-
+        np.save('tabp_look',tabp_look)
         fig = plt.figure()
         ax = fig.add_subplot()
         ctr_levels = [0.01, 0.1, 0.25, 0.5, 0.8, 1]
