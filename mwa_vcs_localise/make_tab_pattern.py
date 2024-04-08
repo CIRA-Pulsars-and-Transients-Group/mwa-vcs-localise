@@ -13,13 +13,11 @@ from astropy.constants import c as sol
 import astropy.units as u
 import matplotlib.pyplot as plt
 import matplotlib.ticker as mticker
-import cmasher as cmr
 from .utils import (
     MWA_LOCATION,
     form_grid_positions,
     find_max_baseline,
     plot_array_layout,
-    makeMaskFromWeightedPatterns,
 )
 from .array_factor import (
     extractWorkingTilePositions,
@@ -72,14 +70,6 @@ def main():
         an estimate of the FWHM. """,
         default=None,
     )
-    # parser.add_argument(
-    #     "--nlayers",
-    #     type=int,
-    #     help="""If not argument provided to -P, this option sets how many
-    #     circular layers of FWHM-sized cells around the central position to
-    #     calculate.""",
-    #     default=100,
-    # )
     parser.add_argument(
         "--gridbox",
         type=str,
@@ -274,8 +264,6 @@ def main():
 
     tabp_look = np.array(tabp_look)
     afp_look = np.array(afp_look)
-    # print(f"afp shape = {afp_look.shape}")
-    # print(f"tab shape = {tabp_look.shape}")
 
     if args.plot:
         if args.nopb:
@@ -284,58 +272,6 @@ def main():
             label = "Zenith-normalised tied-array beam power"
 
         print("Plotting sky map...")
-
-        # snr = [13, 26, 21, 10, 8, 8]
-        # clip_mask = makeMaskFromWeightedPatterns(
-        #     tabp_look.mean(axis=1), snr, snr_percentile=75
-        # )
-
-        # plt.imshow(
-        #     clip_mask,
-        #     aspect="auto",
-        #     extent=[
-        #         grid_ra.min(),
-        #         grid_ra.max(),
-        #         grid_dec.min(),
-        #         grid_dec.max(),
-        #     ],
-        # )
-        # plt.colorbar()
-        # plt.contour(
-        #     grid_ra,
-        #     grid_dec,
-        #     clip_mask,
-        #     levels=np.percentile(clip_mask, [50, 80]),
-        #     cmap=plt.get_cmap("Reds"),
-        # )
-        # plt.scatter(
-        #     look_positions[0].ra.deg,
-        #     look_positions[0].dec.deg,
-        #     marker="x",
-        #     c="r",
-        # )
-        # plt.errorbar(
-        #     73.0029167,
-        #     -34.3116667,
-        #     xerr=0.00125,
-        #     yerr=0.00111,
-        #     marker="+",
-        #     c="C1",
-        # )
-        # from matplotlib.patches import Circle
-
-        # circ = Circle(
-        #     xy=(73.0029167, -34.3116667),
-        #     radius=(3 * u.arcmin).to(u.deg).value,
-        #     facecolor="none",
-        #     edgecolor="C1",
-        # )
-        # plt.gca().add_patch(circ)
-        # plt.xlabel("Right Ascension (deg)")
-        # plt.ylabel("Declination (deg)")
-        # plt.show()
-        # plt.savefig("mask.png", bbox_inches="tight", dpi=150)
-
         product = np.sum(tabp_look.mean(axis=1), axis=0)
 
         fig = plt.figure()
@@ -351,7 +287,7 @@ def main():
         ]
 
         tab_map = ax.imshow(
-            product,
+            tabp_look.mean(axis=1)[0],
             aspect="auto",
             interpolation="none",
             # origin="lower",
@@ -362,16 +298,6 @@ def main():
             vmax=max(ctr_levels),
         )
 
-        # if not args.nopb and len(freqs) == 1:
-        #     pb_ctr = ax.contour(
-        #         grid_ra,
-        #         grid_dec,
-        #         pbp.reshape(afp.shape),
-        #         levels=6,
-        #         colors="black",
-        #         linestyles="dotted",
-        #         norm="log",
-        #     )
         for ld in tabp_look.mean(axis=1):
             tab_ctr = ax.contour(
                 grid_ra,
@@ -381,42 +307,11 @@ def main():
                 cmap="plasma",
                 norm="log",
             )
-        # ax.errorbar(
-        #     73.0029167,
-        #     -34.3116667,
-        #     xerr=0.00125,
-        #     yerr=0.00111,
-        #     marker="+",
-        #     c="C1",
-        # )
-        # tab_map = ax.tricontourf(
-        #     target_positions.ra.deg,
-        #     target_positions.dec.deg,
-        #     product,
-        #     levels=map_levels,
-        #     extend="min",
-        #     cmap=cmap,
-        #     norm="log",
-        #     vmin=map_levels[0],
-        # )
-        # tab_ctr = ax.tricontour(
-        #     target_positions.ra.deg,
-        #     target_positions.dec.deg,
-        #     product,
-        #     levels=ctr_levels[1:-1],
-        #     cmap="plasma",
-        #     norm="log",
-        # )
-        # ax.set_xlim(43, 47)
-        # ax.set_ylim(-57, -53)
-        # ax.set_xlim(20, 70)
-        # ax.set_ylim(-70, -40)
+
         ax.set_xlabel("Right Ascension (deg)", fontsize=14)
         ax.set_ylabel("Declination (deg)", fontsize=14)
         ax.tick_params(labelsize=12)
 
-        # values under the minimum aren't plotted, so revert to the default figure facecolor
-        # ax.set_facecolor(cmap(map_levels[0]))
         cbar = plt.colorbar(
             tab_map,
             ticks=ctr_levels,
@@ -424,8 +319,6 @@ def main():
             extend="min",
         )
         cbar.add_lines(tab_ctr)
-        # if not args.nopb and len(freqs) == 1:
-        #     ax.clabel(pb_ctr, fmt="%g", fontsize=10)
         cbar.set_label(fontsize=12, label=label)
         cbar.ax.tick_params(labelsize=11)
 
@@ -440,146 +333,6 @@ def main():
             oname_base += "_multifreq"
 
         plt.savefig(f"{oname_base}.png", dpi=200, bbox_inches="tight")
-
-        if not args.nopb and len(freqs) == 1:
-            print("Plotting beam slices...")
-            fig.clear()
-            ax = fig.add_subplot()
-            pb_map = ax.imshow(
-                pbp.reshape(afp.shape),
-                aspect="auto",
-                interpolation="none",
-                # origin="lower",
-                extent=map_extent,
-                cmap=cmap,
-                # norm="log",
-                # vmin=min(ctr_levels),
-                # vmax=max(ctr_levels),
-            )
-            cbar = plt.colorbar(
-                pb_map,
-                # ticks=ctr_levels,
-                # format=mticker.ScalarFormatter(),
-                # extend="min",
-            )
-            # cbar.add_lines(tab_ctr)
-            cbar.set_label(fontsize=12, label="Zenith-normalised primary beam power")
-            cbar.ax.tick_params(labelsize=11)
-
-            ax.set_xlabel("Right Ascension (deg)", fontsize=14)
-            ax.set_ylabel("Declination (deg)", fontsize=14)
-            ax.tick_params(labelsize=12)
-            plt.savefig(f"{context.obs_id}_field_pb.png", dpi=200, bbox_inches="tight")
-            plt.close(fig)
-
-            fig, (ax1, ax2) = plt.subplots(2, 1)
-
-            ra_trace_afp = np.prod(afp_look.mean(axis=1), axis=0).mean(axis=0)
-            ra_trace_tab = product.mean(axis=0)
-            dec_trace_afp = np.prod(afp_look.mean(axis=1), axis=0).mean(axis=1)
-            dec_trace_tab = product.mean(axis=1)
-            # ax1.plot(
-            #     np.linspace(box_ra[0], box_ra[1], n_ra),
-            #     ra_trace_afp,
-            #     label="AFP",
-            # )
-            # ax1.plot(
-            #     np.linspace(box_ra[0], box_ra[1], n_ra),
-            #     (ra_trace_tab / ra_trace_tab.max()) * ra_trace_afp.max(),
-            #     label="TAB (Scaled)",
-            #     ls="--",
-            # )
-            dec_linear = np.linspace(box_dec[0], box_dec[1], n_dec)
-            ra_linear = np.linspace(box_ra[0], box_ra[1], n_ra)
-            ax1.plot(
-                ra_linear,
-                product[n_dec // 2, :],
-                label=f"Slice (dec={dec_linear[n_dec // 2]:g}d)",
-                color="C0",
-                ls="-",
-            )
-            ax1.plot(
-                ra_linear,
-                product[n_dec // 2 - 50, :],
-                label=f"Slice (dec={dec_linear[n_dec // 2 - 50]:g}d)",
-                color="C1",
-                ls="-",
-            )
-            # ax1.plot(
-            #     ra_linear,
-            #     product[n_dec // 2 + 50, :],
-            #     label=f"Slice (dec={dec_linear[n_dec // 2 + 50]:g}d)",
-            #     color="C1",
-            #     ls="--",
-            # )
-            ax1.plot(
-                ra_linear,
-                product[n_dec // 2 - 100, :],
-                label=f"Slice (dec={dec_linear[n_dec // 2 - 100]:g}d)",
-                color="C2",
-                ls="-",
-            )
-            # ax1.plot(
-            #     ra_linear,
-            #     product[n_dec // 2 + 100, :],
-            #     label=f"Slice (dec={dec_linear[n_dec // 2 + 100]:g}d)",
-            #     color="C2",
-            #     ls="--",
-            # )
-
-            # ax2.plot(
-            #     dec_linear,
-            #     dec_trace_afp,
-            #     label="AFP",
-            # )
-            # ax2.plot(
-            #     dec_linear,
-            #     (dec_trace_tab / dec_trace_tab.max()) * dec_trace_afp.max(),
-            #     label="TAB (Scaled)",
-            #     ls="--",
-            # )
-            ax2.plot(
-                dec_linear,
-                product[:, n_ra // 2],
-                label=f"Slice (ra={ra_linear[n_ra // 2]:g}d)",
-                color="C0",
-                ls="-",
-            )
-            ax2.plot(
-                dec_linear,
-                product[:, n_ra // 2 - 50],
-                label=f"Slice (ra={ra_linear[n_ra // 2 - 50]:g}d)",
-                color="C1",
-                ls="-",
-            )
-            # ax2.plot(
-            #     dec_linear,
-            #     product[:, n_ra // 2 + 50],
-            #     label=f"Slice (ra={ra_linear[n_ra // 2 + 50]:g}d)",
-            #     color="C1",
-            #     ls="--",
-            # )
-            ax2.plot(
-                dec_linear,
-                product[:, n_ra // 2 - 100],
-                label=f"Slice (ra={ra_linear[n_ra // 2 - 100]:g}d)",
-                color="C2",
-                ls="-",
-            )
-            # ax2.plot(
-            #     dec_linear,
-            #     product[:, n_ra // 2 + 100],
-            #     label=f"Slice (ra={ra_linear[n_ra // 2 + 100]:g}d)",
-            #     color="C2",
-            #     ls="--",
-            # )
-            ax1.set_xlabel("Right Ascension (deg)")
-            ax2.set_xlabel("Declination (deg)")
-            for ax in (ax1, ax2):
-                # ax.set_ylim(0, None)
-                ax.legend(loc="upper right")
-            plt.tight_layout()
-            plt.savefig(f"{context.obs_id}_pattern_cuts.png")
 
     tt1 = timer.time()
     print(f"Done!! (Took {tt1-tt0} seconds.)\n")
