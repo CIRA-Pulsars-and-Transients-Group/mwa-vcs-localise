@@ -303,7 +303,7 @@ def main():
                 grid_ra,
                 grid_dec,
                 ld,
-                levels=ctr_levels[2:-1],
+                levels=ctr_levels[1:-1],
                 cmap="plasma",
                 norm="log",
             )
@@ -333,6 +333,35 @@ def main():
             oname_base += "_multifreq"
 
         plt.savefig(f"{oname_base}.png", dpi=200, bbox_inches="tight")
+
+        if not args.nopb:
+            fig.clear()
+            ax = fig.add_subplot()
+            pb_map = ax.imshow(
+                pbp.reshape(afp.shape),
+                aspect="auto",
+                interpolation="none",
+                extent=map_extent,
+                cmap=cmap,
+                norm="log",
+                vmin=1e-3,
+            )
+            ax.scatter(
+                look_positions[0].ra.deg,
+                look_positions[0].dec.deg,
+                c="r",
+                marker="x",
+            )
+            ax.set_xlabel("Right Ascension (deg)", fontsize=14)
+            ax.set_ylabel("Declination (deg)", fontsize=14)
+            ax.tick_params(labelsize=12)
+            cbar = plt.colorbar(
+                pb_map,
+                # ticks=ctr_levels,
+                format=mticker.ScalarFormatter(),
+                extend="min",
+            )
+            plt.savefig(f"{context.obs_id}_pb.png", dpi=200, bbox_inches="tight")
 
     tt1 = timer.time()
     print(f"Done!! (Took {tt1-tt0} seconds.)\n")
