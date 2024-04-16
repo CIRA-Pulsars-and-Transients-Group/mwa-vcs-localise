@@ -26,8 +26,8 @@ def extractWorkingTilePositions(metadata: MetafitsContext):
              for a single tile.
     :rtype: np.ndarray
     """
-    # We only care about the tiles, not polarisations, so skip the Y pol
-    rf_inputs = metadata.rf_inputs[::2]
+    # We only care about the tiles, not polarisations, so skip the Y pol (last Nant entries)
+    rf_inputs = metadata.rf_inputs[: metadata.num_ants]
 
     # Gather the tile positions into a "vector" for each tile
     tile_positions = np.array(
