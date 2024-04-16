@@ -113,10 +113,10 @@ def find_max_baseline(context: MetafitsContext) -> list:
     tile_positions = np.array(
         [
             np.array([rf.east_m, rf.north_m, rf.height_m])
-            for rf in context.rf_inputs[::2]
+            for rf in context.rf_inputs[: context.num_ants]
         ]
     )
-    tile_flags = np.array([rf.flagged for rf in context.rf_inputs[::2]])
+    tile_flags = np.array([rf.flagged for rf in context.rf_inputs[: context.num_ants]])
     tile_positions = np.delete(tile_positions, np.where(tile_flags == True), axis=0)
 
     # Create the convex hull
@@ -139,10 +139,10 @@ def plot_array_layout(context: MetafitsContext) -> None:
     tile_positions = np.array(
         [
             np.array([rf.east_m, rf.north_m, rf.height_m])
-            for rf in context.rf_inputs[::2]
+            for rf in context.rf_inputs[: context.num_ants]
         ]
     )
-    tile_flags = np.array([rf.flagged for rf in context.rf_inputs[::2]])
+    tile_flags = np.array([rf.flagged for rf in context.rf_inputs[: context.num_ants]])
     max_baseline = find_max_baseline(context)[0]
 
     okay_tiles_n = np.ma.masked_array(tile_positions[:, 1], mask=tile_flags)
@@ -156,20 +156,14 @@ def plot_array_layout(context: MetafitsContext) -> None:
     plt.scatter(bad_tiles_e, bad_tiles_n, zorder=1000, s=10, marker="x", color="r")
     plt.xlabel("East coordinate from array centre (m)", fontsize=14)
     plt.ylabel("North coordiante from array centre (m)", fontsize=14)
-    plt.title(f"{context.sched_start_utc}")
+    plt.title(
+        f"{context.sched_start_utc}\n"
+        + rf"Max. baseline $\approx$ {max_baseline:.0f} m"
+    )
     plt.minorticks_on()
     plt.tick_params(labelsize=12)
     plt.grid()
     plt.grid(which="minor", ls=":")
-    bt = plt.text(
-        0.97,
-        0.07,
-        rf"Max. baseline $\approx$ {max_baseline:.0f} m",
-        transform=plt.gca().transAxes,
-        va="top",
-        ha="right",
-    )
-    bt.set_bbox(dict(facecolor="w", alpha=0.7, edgecolor="none"))
     plt.savefig(f"{context.obs_id}_array_layout.png", dpi=200, bbox_inches="tight")
     plt.close(fig)
 
