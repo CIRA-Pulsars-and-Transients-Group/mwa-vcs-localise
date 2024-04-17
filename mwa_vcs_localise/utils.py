@@ -6,14 +6,23 @@
 import multiprocessing
 
 import matplotlib.pyplot as plt
+import matplotlib.ticker as mticker
 
 import numpy as np
 from scipy.spatial import ConvexHull
 from scipy.spatial.distance import cdist
-from astropy.coordinates import EarthLocation
+from astropy.coordinates import EarthLocation, SkyCoord
 import astropy.units as u
 from mwalib import MetafitsContext
 
+# Plotting style/formats
+plt.rcParams.update(
+    {
+        "font.family": "serif",
+    }
+)
+
+# Define MWA location
 MWA_CENTRE_LON = 116.67081524 * u.deg
 MWA_CENTRE_LAT = -26.70331940 * u.deg
 MWA_CENTRE_H = 377.8269 * u.m
@@ -60,7 +69,11 @@ def find_max_baseline(context: MetafitsContext) -> list:
     return [hdist.max(), hullpoints[bestpair[0]], hullpoints[bestpair[1]]]
 
 
-def plot_array_layout(context: MetafitsContext) -> None:
+def plot_array_layout(
+    context: MetafitsContext,
+    ew_limits: list = [-410, 410],
+    ns_limits: list = [50, 600],
+) -> None:
     tile_positions = np.array(
         [
             np.array([rf.east_m, rf.north_m, rf.height_m])
@@ -77,10 +90,24 @@ def plot_array_layout(context: MetafitsContext) -> None:
 
     fig = plt.figure()
     fig.add_subplot()
-    plt.scatter(okay_tiles_e, okay_tiles_n, zorder=1000, s=10, marker="x", color="k")
-    plt.scatter(bad_tiles_e, bad_tiles_n, zorder=1000, s=10, marker="x", color="r")
-    plt.xlim(-410, 410)
-    plt.ylim(50, 600)
+    plt.scatter(
+        okay_tiles_e,
+        okay_tiles_n,
+        zorder=1000,
+        s=10,
+        marker="x",
+        color="k",
+    )
+    plt.scatter(
+        bad_tiles_e,
+        bad_tiles_n,
+        zorder=1000,
+        s=10,
+        marker="x",
+        color="r",
+    )
+    plt.xlim(ew_limits)
+    plt.ylim(ns_limits)
     plt.xlabel("East coordinate from array centre (m)", fontsize=14)
     plt.ylabel("North coordiante from array centre (m)", fontsize=14)
     plt.title(
@@ -93,3 +120,125 @@ def plot_array_layout(context: MetafitsContext) -> None:
     plt.grid(which="minor", ls=":")
     plt.savefig(f"{context.obs_id}_array_layout.png", dpi=200, bbox_inches="tight")
     plt.close(fig)
+
+
+def plot_primary_beam(
+    context: MetafitsContext,
+    pb: np.ndarray,
+    gra: np.ndarray,
+    gdec: np.ndarray,
+    levels: list,
+    target: SkyCoord = None,
+) -> None:
+
+    map_extent = [
+        gra.min(),
+        gra.max(),
+        gdec.min(),
+        gdec.max(),
+    ]
+
+    fig = plt.figure()
+    ax = fig.add_subplot()
+    pb_map = ax.imshow(
+        pb,
+        aspect="auto",
+        interpolation="none",
+        extent=map_extent,
+        cmap=plt.get_cmap("Greys"),
+        norm="log",
+        vmin=min(levels),
+        vmax=max(levels),
+    )
+    pb_ctr = ax.contour(
+        gra,
+        gdec,
+        pb,
+        levels=levels[1:-1],
+        cmap="plasma",
+        norm="log",
+    )
+    if target:
+        ax.scatter(
+            target.ra.deg,
+            target.dec.deg,
+            c="r",
+            marker="x",
+            zorder=100,
+        )
+    ax.set_xlabel("Right Ascension (deg)", fontsize=14)
+    ax.set_ylabel("Declination (deg)", fontsize=14)
+    ax.tick_params(labelsize=12)
+
+    cbar = plt.colorbar(
+        pb_map,
+        ticks=levels,
+        format=mticker.ScalarFormatter(),
+        extend="min",
+    )
+    cbar.add_lines(pb_ctr)
+    cbar.set_label(fontsize=12, label="Zenith-normalised primary beam power")
+    cbar.ax.tick_params(labelsize=11)
+
+    plt.savefig(f"{context.obs_id}_pb.png", dpi=200, bbox_inches="tight")
+
+
+def plot_tied_array_beam(
+    context: MetafitsContext,
+    tab: np.ndarray,
+    gra: np.ndarray,
+    gdec: np.ndarray,
+    levels: list,
+    label: str = None,
+    oname_suffix: str = None,
+) -> None:
+
+    map_extent = [
+        gra.min(),
+        gra.max(),
+        gdec.min(),
+        gdec.max(),
+    ]
+
+    fig = plt.figure()
+    ax = fig.add_subplot()
+    tab_map = ax.imshow(
+        tab.mean(axis=1)[0],
+        aspect="auto",
+        interpolation="none",
+        # origin="lower",
+        extent=map_extent,
+        cmap=plt.get_cmap("Greys"),
+        norm="log",
+        vmin=min(levels),
+        vmax=max(levels),
+    )
+    for ld in tab.mean(axis=1):
+        tab_ctr = ax.contour(
+            gra,
+            gdec,
+            ld,
+            levels=levels[1:-1],
+            cmap="plasma",
+            norm="log",
+        )
+    ax.set_xlabel("Right Ascension (deg)", fontsize=14)
+    ax.set_ylabel("Declination (deg)", fontsize=14)
+    ax.tick_params(labelsize=12)
+
+    cbar = plt.colorbar(
+        tab_map,
+        ticks=levels,
+        format=mticker.ScalarFormatter(),
+        extend="min",
+    )
+    cbar.add_lines(tab_ctr)
+    if label:
+        cbar.set_label(fontsize=12, label=label)
+    cbar.ax.tick_params(labelsize=11)
+
+    oname_base = f"{context.obs_id}_tiedarray_beam"
+    if oname_suffix:
+        oname_base += oname_suffix
+
+    plt.savefig(f"{oname_base}.png", dpi=200, bbox_inches="tight")

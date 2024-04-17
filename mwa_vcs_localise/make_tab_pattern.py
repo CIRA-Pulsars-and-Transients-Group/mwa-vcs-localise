@@ -15,9 +15,10 @@ import matplotlib.pyplot as plt
 import matplotlib.ticker as mticker
 from .utils import (
     MWA_LOCATION,
-    form_grid_positions,
     find_max_baseline,
     plot_array_layout,
+    plot_primary_beam,
+    plot_tied_array_beam,
 )
 from .array_factor import (
     extractWorkingTilePositions,
@@ -49,7 +50,7 @@ def main():
         dest="freq",
         nargs="+",
         type=float,
-        help="Observing frequency in Hz. Maximum of 5.",
+        help="Observing frequency in Hz.",
     )
     parser.add_argument(
         "-L",
@@ -65,9 +66,9 @@ def main():
         (format: 'hh:mm:ss_dd:mm:ss').
         You may provide multiple sky positions to sample, separating them by
         a single <space>.
-        You can define a box around the look-direction to simulate using the --gridbox option.
-        If no argument provided, will sample the sky around position based on
-        an estimate of the FWHM. """,
+        You can instead define a box around the look-direction to simulate using
+        the --gridbox option.
+        """,
         default=None,
     )
     parser.add_argument(
@@ -87,12 +88,12 @@ def main():
     parser.add_argument(
         "--plot",
         action="store_true",
-        help="Whether to plot the TAB power for each provided point.",
+        help="Whether to produce plots of beam patterns.",
     )
 
     args = parser.parse_args()
-    if len(args.freq) > 5:
-        print("Cannot use more than 5 frequencies at a time, please adjust input.")
+    if len(args.freq) > 10:
+        print("Cannot use more than 10 frequencies at a time, please adjust input.")
         exit(1)
     freqs = np.array(args.freq)
     if args.gridbox:
@@ -168,7 +169,10 @@ def main():
             np.linspace(box_ra[0], box_ra[1], n_ra),
             np.linspace(box_dec[0], box_dec[1], n_dec),
         )
+
+        # Dump the grid to disk
         np.savez("grid", grid_ra, grid_dec)
+
         target_positions = SkyCoord(
             grid_ra,
             grid_dec,
@@ -176,15 +180,6 @@ def main():
             unit=("deg", "deg"),
         )
         print(f"... target positions array shape, (nRA, nDec) = {n_ra, n_dec}")
-
-    elif not args.position and args.gridbox is None:
-        target_positions = form_grid_positions(
-            look_positions[0],
-            # max_separation_arcsec=(min(fwhm / 2)).to(u.arcsecond).value,
-            max_separation_arcsec=(0.5 * u.arcmin).to(u.arcsecond).value,
-            nlayers=args.nlayers,
-            overlap=True,
-        )
     else:
         for p in args.position.split(" "):
             target_ras.append(p.split("_")[0])
@@ -265,103 +260,43 @@ def main():
     tabp_look = np.array(tabp_look)
     afp_look = np.array(afp_look)
 
+    # Dump the tab map to disk
+    np.save("tabp_look", tabp_look)
+
     if args.plot:
-        if args.nopb:
-            label = "Array factor power"
-        else:
-            label = "Zenith-normalised tied-array beam power"
-
-        print("Plotting sky map...")
-        product = np.sum(tabp_look.mean(axis=1), axis=0)
-        np.save("tabp_look", tabp_look)
-        fig = plt.figure()
-        ax = fig.add_subplot()
         ctr_levels = [0.01, 0.1, 0.25, 0.5, 0.8, 1]
-        cmap = plt.get_cmap("Greys")
-
-        map_extent = [
-            grid_ra.min(),
-            grid_ra.max(),
-            grid_dec.min(),
-            grid_dec.max(),
-        ]
-
-        tab_map = ax.imshow(
-            tabp_look.mean(axis=1)[0],
-            aspect="auto",
-            interpolation="none",
-            # origin="lower",
-            extent=map_extent,
-            cmap=cmap,
-            norm="log",
-            vmin=min(ctr_levels),
-            vmax=max(ctr_levels),
-        )
-
-        for ld in tabp_look.mean(axis=1):
-            tab_ctr = ax.contour(
-                grid_ra,
-                grid_dec,
-                ld,
-                levels=ctr_levels[1:-1],
-                cmap="plasma",
-                norm="log",
-            )
-
-        ax.set_xlabel("Right Ascension (deg)", fontsize=14)
-        ax.set_ylabel("Declination (deg)", fontsize=14)
-        ax.tick_params(labelsize=12)
-
-        cbar = plt.colorbar(
-            tab_map,
-            ticks=ctr_levels,
-            format=mticker.ScalarFormatter(),
-            extend="min",
-        )
-        cbar.add_lines(tab_ctr)
-        cbar.set_label(fontsize=12, label=label)
-        cbar.ax.tick_params(labelsize=11)
-
-        oname_base = f"{context.obs_id}_tiedarray_beam"
-
+        oname_suffix = ""
         if args.nopb:
-            oname_base += "_nopb"
+            tab_cbar_label = "Array factor power"
+            oname_suffix += "_nopb"
         else:
-            oname_base += "_pb"
+            tab_cbar_label = "Zenith-normalised tied-array beam power"
+            oname_suffix += "_pb"
 
         if len(args.freq) > 1:
-            oname_base += "_multifreq"
+            oname_suffix += "_multifreq"
 
-        plt.savefig(f"{oname_base}.png", dpi=200, bbox_inches="tight")
+        print("Plotting tied-array beam map...")
+        plot_tied_array_beam(
+            context,
+            tabp_look,
+            grid_ra,
+            grid_dec,
+            ctr_levels,
+            tab_cbar_label,
+            oname_suffix,
+        )
 
         if not args.nopb:
-            fig.clear()
-            ax = fig.add_subplot()
-            pb_map = ax.imshow(
+            print("Plotting primary beam map...")
+            plot_primary_beam(
+                context,
                 pbp.reshape(afp.shape),
-                aspect="auto",
-                interpolation="none",
-                extent=map_extent,
-                cmap=cmap,
-                norm="log",
-                vmin=1e-3,
+                grid_ra,
+                grid_dec,
+                ctr_levels,
+                target=look_positions[0],
             )
-            ax.scatter(
-                look_positions[0].ra.deg,
-                look_positions[0].dec.deg,
-                c="r",
-                marker="x",
-            )
-            ax.set_xlabel("Right Ascension (deg)", fontsize=14)
-            ax.set_ylabel("Declination (deg)", fontsize=14)
-            ax.tick_params(labelsize=12)
-            cbar = plt.colorbar(
-                pb_map,
-                # ticks=ctr_levels,
-                format=mticker.ScalarFormatter(),
-                extend="min",
-            )
-            plt.savefig(f"{context.obs_id}_pb.png", dpi=200, bbox_inches="tight")
 
     tt1 = timer.time()
     print(f"Done!! (Took {tt1-tt0} seconds.)\n")
