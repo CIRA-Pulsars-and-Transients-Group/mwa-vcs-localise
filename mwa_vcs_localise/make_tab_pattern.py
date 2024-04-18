@@ -11,8 +11,6 @@ from astropy.coordinates import SkyCoord, AltAz
 from astropy.time import Time
 from astropy.constants import c as sol
 import astropy.units as u
-import matplotlib.pyplot as plt
-import matplotlib.ticker as mticker
 from .utils import (
     MWA_LOCATION,
     find_max_baseline,
@@ -26,12 +24,6 @@ from .array_factor import (
     calcArrayFactorPower,
 )
 from .primary_beam import getPrimaryBeamPower
-
-plt.rcParams.update(
-    {
-        "font.family": "serif",
-    }
-)
 
 
 def main():
