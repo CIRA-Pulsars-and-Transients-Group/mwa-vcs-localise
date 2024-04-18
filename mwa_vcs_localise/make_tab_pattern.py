@@ -103,8 +103,10 @@ def main():
     print(f"... beam fwhm (arcmin): {fwhm.to(u.arcminute).value}")
     time = Time(args.time, format="isot", scale="utc")
     altaz_frame = AltAz(location=MWA_LOCATION, obstime=time)
-    print("... plotting array layout")
-    plot_array_layout(context)
+
+    if args.plot:
+        print("... plotting array layout")
+        plot_array_layout(context)
 
     # Create the astrometric quantity for the beamformed target direction
     print("Creating look-direction vector...")
