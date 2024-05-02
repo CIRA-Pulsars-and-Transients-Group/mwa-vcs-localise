@@ -3,10 +3,10 @@
 ########################################################
 # Licensed under the Academic Free License version 3.0 #
 ########################################################
-import multiprocessing
 
 import matplotlib.pyplot as plt
 import matplotlib.ticker as mticker
+import cmasher as cm
 
 import numpy as np
 from scipy.spatial import ConvexHull
@@ -88,7 +88,7 @@ def plot_array_layout(
     bad_tiles_n = np.ma.masked_array(tile_positions[:, 1], mask=~tile_flags)
     bad_tiles_e = np.ma.masked_array(tile_positions[:, 0], mask=~tile_flags)
 
-    fig = plt.figure()
+    fig = plt.figure(figsize=(8, 6))
     fig.add_subplot()
     plt.scatter(
         okay_tiles_e,
@@ -138,14 +138,14 @@ def plot_primary_beam(
         gdec.max(),
     ]
 
-    fig = plt.figure()
+    fig = plt.figure(figsize=(8, 6))
     ax = fig.add_subplot()
     pb_map = ax.imshow(
         pb,
         aspect="auto",
         interpolation="none",
         extent=map_extent,
-        cmap=plt.get_cmap("Greys"),
+        cmap=cm.cosmic_r,
         norm="log",
         vmin=min(levels),
         vmax=max(levels),
@@ -175,6 +175,7 @@ def plot_primary_beam(
         ticks=levels,
         format=mticker.ScalarFormatter(),
         extend="min",
+        pad=0.02,
     )
     cbar.add_lines(pb_ctr)
     cbar.set_label(fontsize=12, label="Zenith-normalised primary beam power")
@@ -200,7 +201,7 @@ def plot_tied_array_beam(
         gdec.max(),
     ]
 
-    fig = plt.figure()
+    fig = plt.figure(figsize=(8, 6))
     ax = fig.add_subplot()
     tab_map = ax.imshow(
         tab.mean(axis=1)[0],
@@ -208,7 +209,7 @@ def plot_tied_array_beam(
         interpolation="none",
         # origin="lower",
         extent=map_extent,
-        cmap=plt.get_cmap("Greys"),
+        cmap=cm.sapphire_r,
         norm="log",
         vmin=min(levels),
         vmax=max(levels),
@@ -226,11 +227,13 @@ def plot_tied_array_beam(
     ax.set_ylabel("Declination (deg)", fontsize=14)
     ax.tick_params(labelsize=12)
 
+    tab_map.cmap.set_under("white")
     cbar = plt.colorbar(
         tab_map,
         ticks=levels,
         format=mticker.ScalarFormatter(),
         extend="min",
+        pad=0.02,
     )
     cbar.add_lines(tab_ctr)
     if label:
