@@ -98,14 +98,14 @@ def main():
     context = mwalib.MetafitsContext(args.metafits)
     max_baseline, _, _ = find_max_baseline(context)
     tile_positions = extractWorkingTilePositions(context)
-    fwhm = (1.22 * (sol.value / freqs) / max_baseline) * u.rad
+    width = ((sol.value / freqs) / max_baseline) * u.rad
     print(f"... maximum baseline (m): {max_baseline}")
-    print(f"... beam fwhm (arcmin): {fwhm.to(u.arcminute).value}")
+    print(f"... beam width ~ lambda/D (arcmin): {width.to(u.arcminute).value}")
     time = Time(args.time, format="isot", scale="utc")
     altaz_frame = AltAz(location=MWA_LOCATION, obstime=time)
 
     if args.plot:
-        print("... plotting array layout")
+        print("Plotting array layout...")
         plot_array_layout(context)
 
     # Create the astrometric quantity for the beamformed target direction
@@ -194,6 +194,38 @@ def main():
     t1 = timer.time()
     print(f"... took {t1-t0} seconds")
 
+    # Compute and store the primary beam map, if requested
+    pbp_freq = []
+    for j, freq in enumerate(freqs):
+        if args.nopb:
+            pbp_freq.append(None)
+        else:
+            # Compute the primary beam zenith-normalised power.
+            print(f"Computing primary beam power at frequency = {freq} Hz...")
+            t0 = timer.time()
+            pbp = getPrimaryBeamPower(
+                context,
+                freq,
+                target_positions_altaz.alt.rad,
+                target_positions_altaz.az.rad,
+            ).reshape(grid_ra.shape)
+            pbp_freq.append(pbp)
+            print(f"... primary beam max. in-field power = {pbp.max():.3f}")
+            t1 = timer.time()
+            print(f"... took {t1-t0} seconds")
+    pbp_freq = np.array(pbp_freq)
+
+    if not args.nopb:
+        print("Plotting primary beam map...")
+        plot_primary_beam(
+            context,
+            pbp_freq[0, ...],
+            grid_ra,
+            grid_dec,
+            [0.05, 0.1, 0.25, 0.5, 0.8, 1],
+            target=look_positions[0],
+        )
+
     tabp_look = []
     afp_look = []
     for i, lp in enumerate(look_positions_altaz):
@@ -205,7 +237,7 @@ def main():
         tabp_freq = []
         afp_freq = []
         for j, freq in enumerate(freqs):
-            print(f"Processing frequency = {freq} Hz")
+            print(f"Processing tied-array beam at frequency = {freq} Hz")
             print("Computing array factors...")
             t0 = timer.time()
             # Compute the array factor (tied-array beam weighting factor).
@@ -225,27 +257,11 @@ def main():
             t1 = timer.time()
             print(f"... took {t1-t0} seconds")
 
-            if not args.nopb:
-                # Compute the primary beam zenith-normalised power.
-                print("Computing primary beam power...")
-                t0 = timer.time()
-                pbp = getPrimaryBeamPower(
-                    context,
-                    freq,
-                    target_positions_altaz.alt.rad,
-                    target_positions_altaz.az.rad,
-                )
-                print(f"... primary beam max. in-field power = {pbp.max():.3f}")
-                t1 = timer.time()
-                print(f"... took {t1-t0} seconds")
-            else:
-                pbp = 1.0
-
             # Finally, estimate the zenith-normalised tied-array beam power.
-            if isinstance(pbp, float):
+            if args.nopb:
                 tabp = afp
             else:
-                tabp = afp * pbp.reshape(afp.shape)
+                tabp = afp * pbp_freq[j, ...]
             tabp_freq.append(tabp)
             afp_freq.append(afp)
         tabp_look.append(tabp_freq)
@@ -258,7 +274,7 @@ def main():
     np.save("tabp_look", tabp_look)
 
     if args.plot:
-        ctr_levels = [0.01, 0.1, 0.25, 0.5, 0.8, 1]
+        ctr_levels = [0.05, 0.1, 0.25, 0.5, 0.8, 1]
         oname_suffix = ""
         if args.nopb:
             tab_cbar_label = "Array factor power"
@@ -280,17 +296,6 @@ def main():
             tab_cbar_label,
             oname_suffix,
         )
-
-        if not args.nopb:
-            print("Plotting primary beam map...")
-            plot_primary_beam(
-                context,
-                pbp.reshape(afp.shape),
-                grid_ra,
-                grid_dec,
-                ctr_levels,
-                target=look_positions[0],
-            )
 
     tt1 = timer.time()
     print(f"Done!! (Took {tt1-tt0} seconds.)\n")
