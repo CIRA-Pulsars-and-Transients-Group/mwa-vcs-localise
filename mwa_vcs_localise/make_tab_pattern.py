@@ -208,7 +208,8 @@ def main():
                 freq,
                 target_positions_altaz.alt.rad,
                 target_positions_altaz.az.rad,
-            ).reshape(grid_ra.shape)
+                stokes="I",
+            )[0].reshape(grid_ra.shape)
             pbp_freq.append(pbp)
             print(f"... primary beam max. in-field power = {pbp.max():.3f}")
             t1 = timer.time()
