@@ -4,20 +4,21 @@
 # Licensed under the Academic Free License version 3.0 #
 ########################################################
 
+from typing import Union
+import numpy as np
 from mwalib import MetafitsContext
 from mwa_hyperbeam import FEEBeam as PrimaryBeam
-import numpy as np
 
 
 def getPrimaryBeamPower(
     metadata: MetafitsContext,
     freq_hz: float,
-    alt: float,
-    az: float,
+    alt: Union[float, np.ndarray],
+    az: Union[float, np.ndarray],
     stokes: str = "I",
     zenithNorm: bool = True,
     show_path: bool = False,
-):
+) -> dict[str, np.ndarray]:
     """Calculate the primary beam response (full Stokes) for a
     given observation over a grid of the sky.
 
@@ -42,10 +43,11 @@ def getPrimaryBeamPower(
     :type zenithNorm: bool, optional
     :param show_path: Show the einsum optimization path. Defaults to False.
     :type show_path: bool, optional
-    :return: The primary beam response over the provided sky positions.
-             The position axis is flattened, thus needs to be reshaped
-             based on the input az/alt arguments.
-    :rtype: np.ndarray
+    :return: The primary beam response for each requested Stokes parameter
+             over the provided sky positions. Note: The position axis is
+             flattened and needs to be reshaped based on the input az/alt
+             arguments (or however the user desires).
+    :rtype: dict[str, np.ndarray]
     """
     za = np.pi / 2 - alt
     beam = PrimaryBeam()
@@ -68,14 +70,11 @@ def getPrimaryBeamPower(
     # the final Stokes parameters. Effectively using the formalism of the
     # "polarisation measurement equation" of Hamaker (2000) and van Straten (2004).
     rho = dict(
-        S0=np.matrix([[1, 0], [0, 1]]),  # sigma0 (identity)
-        S1=np.matrix([[0, 1], [1, 0]]),  # sigma1
-        S2=np.matrix([[0, -1j], [1j, 0]]),  # sigma2
-        S3=np.matrix([[1, 0], [0, -1]]),  # sigma3
+        sI=np.matrix([[1, 0], [0, 1]]),  # sigma0, provides I
+        sU=np.matrix([[0, 1], [1, 0]]),  # sigma1, provides U
+        sV=np.matrix([[0, -1j], [1j, 0]]),  # sigma2, provides V
+        sQ=np.matrix([[1, 0], [0, -1]]),  # sigma3, provides Q
     )
-    # map the Stokes parameters to their spin matrix transforms
-    stokes_to_rho = dict(I="S0", Q="S3", U="S1", V="S2")
-
     # Multiplying the above spin matrices on the left by the Jones matrix,
     # and on the right by the Hermitian transpose of the Jones matrix will
     # retrieve the Stokes response of the instrument (modulo a scaling factor).
@@ -89,9 +88,10 @@ def getPrimaryBeamPower(
     # where Tr is the trace operator, @ implies matrix multiplication,
     # and "i" is the imaginary unit.
 
-    # Here, we figure out the optimal contraction path once, and then just use that for each Stokes parameter
-    # (Possibly a more efficient combination of operations might scale better, but this is still rapid.)
-    einsum_path = np.einsum_path("Nki,ij,jkN->N", J, rho["S0"], K, optimize="optimal")
+    # Here, we figure out the optimal contraction path once, and then just use
+    # that for each Stokes parameter. (There is possibly a more efficient combination
+    # of operations might scale better, but this is still rapid.)
+    einsum_path = np.einsum_path("Nki,ij,jkN->N", J, rho["sI"], K, optimize="optimal")
     if show_path:
         print(einsum_path[0])
         print(einsum_path[1])
@@ -101,10 +101,13 @@ def getPrimaryBeamPower(
     # - then we do the multiplication of the N (j x k) composite matrices onto the inverse Jones matrix (j x k)
     # - finally, the "->N" symbol implies the trace (sum of diagonals) of each N matrices
 
-    stokes_response = []
+    stokes_response = dict()
     for st in stokes:
-        rho_mat = rho[stokes_to_rho[st]]
-        # Use str.casefold() to ensure comparison is case-agnostic
+        # From the Stokes parameter letter, retrieve the correct spin matrix
+        rho_mat = rho[f"s{st}"]
+
+        # Determine the scale factor required to apply after matrix operations.
+        # Here we use casefold() to ensure comparison is case-agnostic
         if st.casefold() in "IQU".casefold():
             scale = 1 / 2
         elif st.casefold() == "V".casefold():
@@ -113,17 +116,15 @@ def getPrimaryBeamPower(
             print(f"Unrecognized Stokes parameter: {st}!")
             raise ValueError(f"Unrecognized Stokes parameter: st={st}!")
 
-        stokes_response.append(
-            scale
-            * np.einsum(
-                "Nki,ij,jkN->N",
-                J,
-                rho_mat,
-                K,
-                optimize=einsum_path[0],
-            ).real
-            # We explicitly take the real part here due to floating-point
-            # precision leaving some very small imaginary components in the result
+        stokes_response.update(
+            {
+                f"{st}": scale
+                * np.einsum(
+                    "Nki,ij,jkN->N", J, rho_mat, K, optimize=einsum_path[0]
+                ).real
+                # We explicitly take the real part here due to floating-point
+                # precision leaving some very small imaginary components in the result
+            }
         )
 
     return stokes_response
