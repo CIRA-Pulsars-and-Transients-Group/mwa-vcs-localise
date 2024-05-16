@@ -11,7 +11,7 @@ from astropy.constants import c as sol
 from .utils import MWA_CENTRE_CABLE_LEN
 
 
-def extractWorkingTilePositions(metadata: MetafitsContext):
+def extractWorkingTilePositions(metadata: MetafitsContext) -> np.ndarray:
     """Extract tile position information required for beamforming and/or
     computing the array factor quantity from a metafits structure.
     Flagged tiles are automatically excluded from the result.
@@ -52,7 +52,9 @@ def extractWorkingTilePositions(metadata: MetafitsContext):
     return tile_positions
 
 
-def calcGeometricDelays(positions: np.ndarray, freq_hz: float, alt: float, az: float):
+def calcGeometricDelays(
+    positions: np.ndarray, freq_hz: float, alt: float, az: float
+) -> np.ndarray:
     """Compute the geometric delay phases for each element position in order to
     "phase up" to the provided position at a specific frequency. These are the
     phasors used in a beamforming operation.
@@ -70,7 +72,7 @@ def calcGeometricDelays(positions: np.ndarray, freq_hz: float, alt: float, az: f
     :type az: np.ndarray, float
     :return: The required phasors needed to rotate the element patterns to
              each requested az/alt pair.
-    :rtype: np.ndarray, complex
+    :rtype: np.ndarray
     """
     # Create the unit vector(s)
     u = np.array(
@@ -102,7 +104,7 @@ def calcGeometricDelays(positions: np.ndarray, freq_hz: float, alt: float, az: f
     return phasor
 
 
-def calcArrayFactorPower(look_w, target_w):
+def calcArrayFactorPower(look_w: np.ndarray, target_w: np.ndarray) -> np.ndarray:
     """Compute the array factor power from a given pointing phasor
     and one or more target directions.
 
@@ -128,4 +130,5 @@ def calcArrayFactorPower(look_w, target_w):
     # included in the sum (i.e., length of the `look_w` vector).
     print("... converting to power")
     afp = (np.absolute(sum_over_antennas) / look_w.size) ** 2
+
     return afp
