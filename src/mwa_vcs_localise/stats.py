@@ -20,12 +20,11 @@ from matplotlib import rc
 import cmasher as cms
 
 
-def beam_reader(data_directory):
+def __beam_reader(data_directory):
     """
     TO BE DEPRECATED - ONLY KEP FOR TESTING.
     Function to read tabp and grid from files on disk
     This function is to be deprecated as we integrate stats.py wit the rest of the package.
-    When deprecation is confirmed, statements in lines 173 and 287 in make_tab_pattern should be obsolete.
     """
     tabp_file = os.path.join(data_directory,'tabp_look.npy')
     grid_file = os.path.join(data_directory,'grid.npz')
@@ -181,8 +180,6 @@ def chi2_plot(chi2, grid_ra, grid_dec, obs_beam_centers, obs_mask, contour_level
         ax1.plot(truth_coords.ra.deg, truth_coords.dec.deg, '+w', markersize=10,mew=3,label='Truth')
 
     # Beams
-    #ax1.plot(look_ra[OBS_MASK], look_dec[OBS_MASK], 'Dy',mec='k', ms=10, label='Look beam centers')
-    #ax1.plot(look_ra[~OBS_MASK], look_dec[~OBS_MASK], 'Dy',mec='r', ms=10, label='Look beam center with max SNR')
     ax1.plot(obs_beam_centers.ra.deg[obs_mask], obs_beam_centers.dec.deg[obs_mask], 'Dy', mec='k', ms=10, label='Beam centers')
     ax1.plot(obs_beam_centers.ra.deg[~obs_mask], obs_beam_centers.dec.deg[~obs_mask], 'Dy', mec='r', ms=10, label='Beam center with max SNR')
     
@@ -205,5 +202,9 @@ def chi2_plot(chi2, grid_ra, grid_dec, obs_beam_centers, obs_mask, contour_level
     return fig
 
 
-def main():
-    
+def seekat(detfile, tabp_look, grid_ra, grid_dec, cov_nsim=1000, plot_cov=True, loc_contour_levels=[20,40,60,100], truth_coords=None):
+    obs_beam_centers, obs_snr, obs_weights, obs_mask = snr_reader(detfile)
+    covariance, cov_fig = covariance_estimation(obs_snr, obs_mask, obs_weights, nsim=cov_nsim, plot_cov=plot_cov)
+    chi2 = chi2_calc(tabp_look, obs_mask, obs_snr, obs_weights, covariance)
+    localization_fig = chi2_plot(chi2, grid_ra, grid_dec, obs_beam_centers, obs_mask, contour_levels=loc_contour_levels, truth_coords=truth_coords)
+    return localization_fig, cov_fig

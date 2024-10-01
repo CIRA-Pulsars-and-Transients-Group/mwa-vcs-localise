@@ -26,7 +26,7 @@ from .array_factor import (
     calcArrayFactorPower,
 )
 from .primary_beam import getPrimaryBeamPower
-
+from .stats import seekat
 
 def main():
     parser = argparse.ArgumentParser()
@@ -84,6 +84,19 @@ def main():
         action="store_true",
         help="Whether to produce plots of beam patterns.",
     )
+    parser.add_argument(
+        "--seekat",
+        action="store_true",
+        help="Whether to estimate localization based on seeKAT method.",
+    )
+    parser.add_argument(
+        "--detfile",
+        type=str,
+        help="Path to a CSV, at least containing columns labeled as ra, dec, snr",
+        default=None,
+
+    )
+
 
     args = parser.parse_args()
     if len(args.freq) > 10:
@@ -169,8 +182,8 @@ def main():
         sky_area_sr = sky_area(box_ra, box_dec)
         print(f"... sky area = {sky_area_sr} = {sky_area_sr.to(u.deg**2)}")
 
-        # Dump the grid to disk
-        np.savez("grid", grid_ra, grid_dec)
+        # Dump the grid to disk - deprecated, to be removed
+        #np.savez("grid", grid_ra, grid_dec)
 
         target_positions = SkyCoord(
             grid_ra,
@@ -283,8 +296,8 @@ def main():
     spatial_covar = np.cov(tabp_look[0][0].ravel(), tabp_look[1][0].ravel())
     print(spatial_covar)
 
-    # Dump the tab map to disk
-    np.save("tabp_look", tabp_look)
+    # Dump the tab map to disk - deprecated, to be removed
+    #np.save("tabp_look", tabp_look)
 
     if args.plot:
         ctr_levels = [0.05, 0.1, 0.25, 0.5, 0.8, 1]
@@ -321,6 +334,12 @@ def main():
 
     tt1 = timer.time()
     print(f"Done!! (Took {tt1-tt0} seconds.)\n")
+
+    if args.seekat:
+        if args.detfile != None:
+            seekat()
+        else:
+            print('ERROR: No detection file provided.')
 
 
 if __name__ == "__main__":
