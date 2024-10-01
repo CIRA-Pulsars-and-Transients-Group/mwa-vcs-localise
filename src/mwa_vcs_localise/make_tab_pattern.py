@@ -28,6 +28,7 @@ from .array_factor import (
 from .primary_beam import getPrimaryBeamPower
 from .stats import seekat
 
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument(
@@ -94,9 +95,7 @@ def main():
         type=str,
         help="Path to a CSV, at least containing columns labeled as ra, dec, snr",
         default=None,
-
     )
-
 
     args = parser.parse_args()
     if len(args.freq) > 10:
@@ -183,7 +182,7 @@ def main():
         print(f"... sky area = {sky_area_sr} = {sky_area_sr.to(u.deg**2)}")
 
         # Dump the grid to disk - deprecated, to be removed
-        #np.savez("grid", grid_ra, grid_dec)
+        # np.savez("grid", grid_ra, grid_dec)
 
         target_positions = SkyCoord(
             grid_ra,
@@ -297,7 +296,7 @@ def main():
     print(spatial_covar)
 
     # Dump the tab map to disk - deprecated, to be removed
-    #np.save("tabp_look", tabp_look)
+    # np.save("tabp_look", tabp_look)
 
     if args.plot:
         ctr_levels = [0.05, 0.1, 0.25, 0.5, 0.8, 1]
@@ -337,9 +336,9 @@ def main():
 
     if args.seekat:
         if args.detfile != None:
-            seekat()
+            seekat(args.detfile, tabp_look, grid_ra, grid_dec)
         else:
-            print('ERROR: No detection file provided.')
+            print("ERROR: No detection file provided.")
 
 
 if __name__ == "__main__":
