@@ -26,7 +26,7 @@ from .array_factor import (
     calcArrayFactorPower,
 )
 from .primary_beam import getPrimaryBeamPower
-from .stats import seekat
+from .stats import seekat, snr_reader
 
 
 def main():
@@ -124,18 +124,21 @@ def main():
 
     # Create the astrometric quantity for the beamformed target direction
     print("Creating look-direction vector...")
-    look_ras = []
-    look_decs = []
-    for p in args.look.split(" "):
-        look_ras.append(p.split("_")[0])
-        look_decs.append(p.split("_")[1])
+    if args.detfile:
+        look_positions = snr_reader(args.detfile)[0]
+    else:
+        look_ras = []
+        look_decs = []
+        for p in args.look.split(" "):
+            look_ras.append(p.split("_")[0])
+            look_decs.append(p.split("_")[1])
 
-    look_positions = SkyCoord(
-        look_ras,
-        look_decs,
-        frame="icrs",
-        unit=("hourangle", "deg"),
-    )
+        look_positions = SkyCoord(
+            look_ras,
+            look_decs,
+            frame="icrs",
+            unit=("hourangle", "deg"),
+        )
     print("Converting to AltAz...")
     t0 = timer.time()
     look_positions_altaz = look_positions.transform_to(altaz_frame)

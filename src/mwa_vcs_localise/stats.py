@@ -298,6 +298,7 @@ def seekat(
         obs_snr, obs_mask, obs_weights, nsim=cov_nsim, plot_cov=plot_cov
     )
     chi2 = chi2_calc(tabp_look, obs_mask, obs_snr, obs_weights, covariance)
+    print(chi2.shape)
     localization_fig = chi2_plot(
         chi2,
         grid_ra,
