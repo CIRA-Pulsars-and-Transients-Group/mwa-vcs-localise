@@ -5,7 +5,7 @@
 ########################################################
 
 import numpy as np
-from mwalib import MetafitsContext
+from mwalib import MetafitsContext, Pol
 from astropy.constants import c as sol
 
 from .utils import MWA_CENTRE_CABLE_LEN
@@ -26,9 +26,6 @@ def extractWorkingTilePositions(metadata: MetafitsContext) -> np.ndarray:
              for a single tile.
     :rtype: np.ndarray
     """
-    # We only care about the tiles, not polarisations, so skip the Y pol (last Nant entries)
-    rf_inputs = metadata.rf_inputs[: metadata.num_ants]
-
     # Gather the tile positions into a "vector" for each tile
     tile_positions = np.array(
         [
@@ -40,13 +37,14 @@ def extractWorkingTilePositions(metadata: MetafitsContext) -> np.ndarray:
                     rf.electrical_length_m - MWA_CENTRE_CABLE_LEN.value,
                 ]
             )
-            for rf in rf_inputs
+            for rf in metadata.rf_inputs
+            if rf.pol == Pol.X
         ]
     )
 
     # Gather the flagged tile information from the metafits information
     # and remove those tiles from the above vector
-    tile_flags = np.array([rf.flagged for rf in rf_inputs])
+    tile_flags = np.array([rf.flagged for rf in metadata.rf_inputs if rf.pol == Pol.X])
     tile_positions = np.delete(tile_positions, np.where(tile_flags == True), axis=0)
 
     return tile_positions

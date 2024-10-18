@@ -13,7 +13,7 @@ from scipy.spatial import ConvexHull
 from scipy.spatial.distance import cdist
 from astropy.coordinates import EarthLocation, SkyCoord
 import astropy.units as u
-from mwalib import MetafitsContext
+from mwalib import MetafitsContext, Pol
 
 # Plotting style/formats
 plt.rcParams.update(
@@ -63,10 +63,11 @@ def find_max_baseline(context: MetafitsContext) -> list:
     tile_positions = np.array(
         [
             np.array([rf.east_m, rf.north_m, rf.height_m])
-            for rf in context.rf_inputs[: context.num_ants]
+            for rf in context.rf_inputs
+            if rf.Pol == Pol.X
         ]
     )
-    tile_flags = np.array([rf.flagged for rf in context.rf_inputs[: context.num_ants]])
+    tile_flags = np.array([rf.flagged for rf in context.rf_inputs if rf.Pol == Pol.X])
     tile_positions = np.delete(tile_positions, np.where(tile_flags == True), axis=0)
 
     # Create the convex hull
@@ -93,10 +94,11 @@ def plot_array_layout(
     tile_positions = np.array(
         [
             np.array([rf.east_m, rf.north_m, rf.height_m])
-            for rf in context.rf_inputs[: context.num_ants]
+            for rf in context.rf_inputs
+            if rf.pol == Pol.X
         ]
     )
-    tile_flags = np.array([rf.flagged for rf in context.rf_inputs[: context.num_ants]])
+    tile_flags = np.array([rf.flagged for rf in context.rf_inputs if rf.pol == Pol.X])
     max_baseline = find_max_baseline(context)[0]
 
     okay_tiles_n = np.ma.masked_array(tile_positions[:, 1], mask=tile_flags)
