@@ -64,10 +64,10 @@ def find_max_baseline(context: MetafitsContext) -> list:
         [
             np.array([rf.east_m, rf.north_m, rf.height_m])
             for rf in context.rf_inputs
-            if rf.Pol == Pol.X
+            if rf.pol == Pol.X
         ]
     )
-    tile_flags = np.array([rf.flagged for rf in context.rf_inputs if rf.Pol == Pol.X])
+    tile_flags = np.array([rf.flagged for rf in context.rf_inputs if rf.pol == Pol.X])
     tile_positions = np.delete(tile_positions, np.where(tile_flags == True), axis=0)
 
     # Create the convex hull
@@ -225,7 +225,7 @@ def plot_tied_array_beam(
         tab.mean(axis=1)[0],
         aspect="auto",
         interpolation="none",
-        # origin="lower",
+        origin="lower",
         extent=map_extent,
         cmap=cm.sapphire_r,
         norm="log",
