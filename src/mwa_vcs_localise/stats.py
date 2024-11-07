@@ -143,7 +143,7 @@ def covariance_estimation(obs_snr, obs_mask, obs_weights, nsim=1000, plot_cov=Tr
         cmap = cms.get_sub_cmap(cms.guppy, 0.0, 1.0)
 
         ax1 = fig.add_subplot(1, 1, 1)
-        ax1_img = ax1.imshow(covariance, cmap=cmap, vmin=-1, vmax=1)
+        ax1_img = ax1.imshow(covariance, cmap=cmap, vmin=-1, vmax=1, aspect="auto")
         i_maxsnr = np.argmax(obs_snr) + 1
         beam_pair_labels = np.array(
             [f"{obs_i+1}/{i_maxsnr}" for obs_i, obs_snr in enumerate(obs_snr)]
@@ -152,9 +152,7 @@ def covariance_estimation(obs_snr, obs_mask, obs_weights, nsim=1000, plot_cov=Tr
         ax1.set_yticks(ticks=np.arange(0, len(obs_weights)), labels=beam_pair_labels)
         ax1.set_xlabel("Beam pair", fontsize=24, ha="center")
         ax1.set_ylabel("Beam pair", fontsize=24, ha="center")
-        ax1.set_title(
-            r"$i_\textrm{SNRmax}=$ " + f"{i_maxsnr}", fontsize=24, va="bottom"
-        )
+        ax1.set_title(r"$i_{\rm SNRmax}=$ " + f"{i_maxsnr}", fontsize=24, va="bottom")
         ax1.tick_params(axis="both", which="major", labelsize=24)
         ax1.tick_params(axis="both", which="major", length=0)
         ax1.tick_params(
@@ -176,7 +174,7 @@ def covariance_estimation(obs_snr, obs_mask, obs_weights, nsim=1000, plot_cov=Tr
 
 def chi2_calc(tabp_look, obs_mask, obs_snr, obs_weights, cov):
     P_array = tabp_look[obs_mask, ...] / tabp_look[obs_snr.argmax(), ...]
-    R_array = obs_weights[:, None, None] - P_array
+    R_array = obs_weights[:, None, None] - P_array.squeeze()
     cov_inv = np.linalg.inv(cov)
     n_obs = len(obs_snr)
     reshaped_R = np.reshape(R_array, (n_obs - 1, -1))
@@ -197,25 +195,35 @@ def chi2_plot(
 ):
     map_extent = [grid_ra.min(), grid_ra.max(), grid_dec.min(), grid_dec.max()]
 
-    aspect = "equal"
-
+    aspect = "auto"
+    origin = "lower"
     cmap = cms.get_sub_cmap(cms.cosmic_r, 0.1, 0.9)
+    # cmap = cms.get_sub_cmap(cms.cosmic, 0.1, 0.9)
     cmapnorm = colors.LogNorm(vmin=1e1, vmax=1e5, clip=False)
+    # cmapnorm = colors.Normalize(vmin=-1, vmax=5, clip=False)
     contour_cmap = cms.get_sub_cmap(cms.ember, 0.4, 0.9)
 
-    fig = plt.figure(figsize=(20, 10))
+    fig = plt.figure(figsize=(14, 10), constrained_layout=True)
     ax1 = fig.add_subplot(1, 1, 1)
 
     # chi2 map
     ax1_img = ax1.imshow(
-        chi2, aspect=aspect, extent=map_extent, cmap=cmap, norm=cmapnorm
+        # np.log(chi2),
+        chi2,
+        aspect=aspect,
+        extent=map_extent,
+        cmap=cmap,
+        norm=cmapnorm,
+        origin=origin,
     )
     # contours for specific levels of chi2
     ax1_ctr = ax1.contour(
         chi2,
         levels=contour_levels,
+        # np.log(chi2),
+        # levels=np.log(contour_levels),
         extent=map_extent,
-        origin="image",
+        origin=origin,
         cmap=contour_cmap,
     )
 
@@ -228,7 +236,7 @@ def chi2_plot(
     ax1.plot(best_ra, best_dec, "xk", markersize=10, mew=3, label="Best fit")
 
     # Truth Coordinates for comparison
-    if truth_coords:
+    if truth_coords != None:
         ax1.plot(
             truth_coords.ra.deg,
             truth_coords.dec.deg,
@@ -256,9 +264,9 @@ def chi2_plot(
         label="Beam center with max SNR",
     )
 
-    ax1.legend(fontsize=18, loc=2)
-    ax1.set_xlabel("R.A. (ICRS)", fontsize=18, ha="center")
-    ax1.set_ylabel("Dec. (ICRS)", fontsize=18, ha="center")
+    # ax1.legend(fontsize=18, loc=2)
+    ax1.set_xlabel("R.A. (ICRS)", fontsize=20, ha="center")
+    ax1.set_ylabel("Dec. (ICRS)", fontsize=20, ha="center")
     ax1.minorticks_on()
     ax1.tick_params(axis="both", which="major", labelsize=18)
     ax1.tick_params(axis="both", which="major", length=9)
@@ -268,18 +276,18 @@ def chi2_plot(
     cbar = fig.colorbar(
         ax1_img,
         ax=fig.axes,
-        shrink=0.73,
-        orientation="horizontal",
-        location="top",
-        aspect=30,
-        pad=0.02,
+        # shrink=0.73,
+        orientation="vertical",
+        location="right",
+        # aspect=30,
+        pad=0.01,
     )
     cbar.add_lines(ax1_ctr)
     cbar.ax.set_title(r"$\chi^2$", fontsize=18, ha="center")
-    cbar.ax.xaxis.set_ticks_position("top")
+    # cbar.ax.xaxis.set_ticks_position("top")
     cbar.ax.tick_params(which="major", direction="in", length=9, bottom=True, top=True)
     cbar.ax.tick_params(which="minor", direction="in", length=5, bottom=True, top=True)
-    cbar.ax.xaxis.set_tick_params(labelsize=18)
+    cbar.ax.yaxis.set_tick_params(labelsize=18)
     return fig
 
 
