@@ -96,6 +96,12 @@ def main():
         help="Path to a CSV, at least containing columns labeled as ra, dec, snr",
         default=None,
     )
+    parser.add_argument(
+        "--truth",
+        type=str,
+        help="Known true position of the target source (format: 'hh:mm:ss_dd:mm:ss').",
+        default=None,
+    )
 
     args = parser.parse_args()
     if len(args.freq) > 10:
@@ -292,17 +298,17 @@ def main():
     afp_look = np.array(afp_look)
 
     # tabp_look has shape: (nlook, nfreq, ndec, nra)
-    print(f"mean = {tabp_look.mean(axis=(-1,-2))/sky_area_sr.value}")
-    print(f"variance = {tabp_look.var(axis=(-1,-2))/sky_area_sr.value}")
-    print(tabp_look[0][0].shape)
-    spatial_covar = np.cov(tabp_look[0][0].ravel(), tabp_look[1][0].ravel())
-    print(spatial_covar)
+    # print(f"mean = {tabp_look.mean(axis=(-1,-2))/sky_area_sr.value}")
+    # print(f"variance = {tabp_look.var(axis=(-1,-2))/sky_area_sr.value}")
+    # print(tabp_look[0][0].shape)
+    # spatial_covar = np.cov(tabp_look[0][0].ravel(), tabp_look[1][0].ravel())
+    # print(spatial_covar)
 
     # Dump the tab map to disk - deprecated, to be removed
     # np.save("tabp_look", tabp_look)
 
     if args.plot:
-        ctr_levels = [0.05, 0.1, 0.25, 0.5, 0.8, 1]
+        ctr_levels = [0.01, 0.05, 0.1, 0.25, 0.5, 0.8, 1]
         oname_suffix = ""
         if args.nopb:
             tab_cbar_label = "Array factor power"
@@ -339,7 +345,23 @@ def main():
 
     if args.seekat:
         if args.detfile != None:
-            seekat(args.detfile, tabp_look, grid_ra, grid_dec)
+            if args.truth != None:
+                true_coords = SkyCoord(
+                    args.truth,
+                    frame="icrs",
+                    unit=("hourangle", "deg"),
+                )
+            else:
+                true_coords = None
+            loc, cov = seekat(
+                args.detfile,
+                tabp_look,
+                grid_ra,
+                grid_dec,
+                truth_coords=true_coords,
+            )
+            loc.savefig("localisation.png")
+            cov.savefig("covariance.png")
         else:
             print("ERROR: No detection file provided.")
 
