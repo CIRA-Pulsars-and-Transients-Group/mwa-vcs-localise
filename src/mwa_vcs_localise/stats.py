@@ -7,6 +7,7 @@
 # For basic algebra and stats
 import numpy as np
 import scipy.stats as st
+import scipy.spatial as sp
 
 # Astropy
 import astropy.units as u
@@ -26,6 +27,8 @@ def __beam_reader(data_directory):
     Function to read tabp and grid from files on disk
     This function is to be deprecated as we integrate stats.py wit the rest of the package.
     """
+    import os
+
     tabp_file = os.path.join(data_directory, "tabp_look.npy")
     grid_file = os.path.join(data_directory, "grid.npz")
 
@@ -137,6 +140,15 @@ def covariance_estimation(obs_snr, obs_mask, obs_weights, nsim=1000, plot_cov=Tr
         simulation_snr[:, obs_mask] / simulation_snr.T[obs_snr.argmax()][:, None]
     )
     covariance = np.cov(simulation_ratio, rowvar=False)
+    if np.all(np.abs(covariance) < 1e-2):
+        print("  Covariances are all < abs(1e-2)")
+        print(covariance)
+    elif np.all(np.ans(covariance) > 0.15):
+        print("  Covariances are all > abs(0.15)")
+        print(covariance)
+    if np.any(np.abs(covariance) > 0.5):
+        print("  WARNING: At least one covariance value is > abs(0.5)")
+        print(covariance)
 
     if plot_cov:
         fig = plt.figure(figsize=(20, 10))
@@ -184,24 +196,61 @@ def chi2_calc(tabp_look, obs_mask, obs_snr, obs_weights, cov):
     return chi2
 
 
+def estimate_errors_from_contours(ctr_set, ref_ra, ref_dec, idx=2):
+    sym_err = 1.0e6
+    for pa in range(len(ctr_set.allsegs[idx])):
+        pth = ctr_set.allsegs[idx][pa]
+        d = sp.distance.cdist(pth, pth)
+        x, y = pth[list(np.unravel_index(np.argmax(d), d.shape))].T
+        err = max(np.max(np.abs(ref_ra - x)), np.max(np.abs(abs(ref_dec) - abs(y))))
+        if err < sym_err:
+            sym_err = err
+    return sym_err
+
+
 def chi2_plot(
     chi2,
     grid_ra,
     grid_dec,
     obs_beam_centers,
     obs_mask,
-    contour_levels=[20, 40, 60, 100],
+    contour_levels=None,
     truth_coords=None,
+    window=True,
 ):
     map_extent = [grid_ra.min(), grid_ra.max(), grid_dec.min(), grid_dec.max()]
 
     aspect = "auto"
     origin = "lower"
     cmap = cms.get_sub_cmap(cms.cosmic_r, 0.1, 0.9)
-    # cmap = cms.get_sub_cmap(cms.cosmic, 0.1, 0.9)
-    cmapnorm = colors.LogNorm(vmin=1e1, vmax=1e5, clip=False)
-    # cmapnorm = colors.Normalize(vmin=-1, vmax=5, clip=False)
     contour_cmap = cms.get_sub_cmap(cms.ember, 0.4, 0.9)
+
+    if window:
+        print(
+            "Placing Gaussian window at central TAB with width ~ FWHM ~ 2.355 * max. TAB separation."
+        )
+        ctr_coord = np.squeeze(obs_beam_centers[~obs_mask])
+        dists = [
+            c.to(u.deg).value for c in ctr_coord.separation(obs_beam_centers[obs_mask])
+        ]
+        max_dist = max(dists)
+        mu = np.array([ctr_coord.ra.deg, ctr_coord.dec.deg])
+        sigma = np.array(
+            [
+                [max_dist, 0],
+                [0, max_dist],
+            ]
+        )
+        kern = st.multivariate_normal(mean=mu, cov=2.355 * sigma)
+        wt = 1 / kern.pdf(np.dstack((grid_ra, grid_dec)))
+    else:
+        wt = 1.0
+
+    chi2 = wt * chi2
+    contour_levels = np.percentile(chi2, 100 - np.array([99.9, 99.99, 99.999]))[::-1]
+    cmapnorm = colors.LogNorm(
+        vmin=np.percentile(chi2, 0.0001), vmax=np.percentile(chi2, 10), clip=False
+    )
 
     fig = plt.figure(figsize=(14, 10), constrained_layout=True)
     ax1 = fig.add_subplot(1, 1, 1)
@@ -233,16 +282,38 @@ def chi2_plot(
         grid_ra[best_ra_index, best_dec_index],
         grid_dec[best_ra_index, best_dec_index],
     )
-    ax1.plot(best_ra, best_dec, "xk", markersize=10, mew=3, label="Best fit")
+
+    # Get the errors (taken from the contours).
+    # We want to access the contour levels and then search for the smallest separation
+    # which will correspond to the contour of the localisation peak
+    sym_err_ext = estimate_errors_from_contours(ax1_ctr, best_ra, best_dec, idx=2)
+    sym_err_int = estimate_errors_from_contours(ax1_ctr, best_ra, best_dec, idx=1)
+    print(f"best R.A. = {best_ra:g} deg, best Dec. = {best_dec:g} deg")
+    print(f"exterior sym. pos. err. = {sym_err_ext*60:g} arcmin")
+    print(f"interior sym. pos. err. = {sym_err_int*60:g} arcmin")
+    # Use the interior error for plotting
+    sym_err = sym_err_int
+
+    ax1.errorbar(
+        best_ra,
+        best_dec,
+        yerr=sym_err,
+        xerr=sym_err,
+        marker="none",
+        color="w",
+        markersize=10,
+        mew=3,
+        label="Best fit",
+    )
 
     # Truth Coordinates for comparison
     if truth_coords != None:
         ax1.plot(
             truth_coords.ra.deg,
             truth_coords.dec.deg,
-            "+w",
-            markersize=10,
-            mew=3,
+            "xr",
+            markersize=5,
+            mew=1,
             label="Truth",
         )
 
@@ -252,7 +323,7 @@ def chi2_plot(
         obs_beam_centers.dec.deg[obs_mask],
         "Dy",
         mec="k",
-        ms=10,
+        ms=5,
         label="Beam centers",
     )
     ax1.plot(
@@ -260,11 +331,16 @@ def chi2_plot(
         obs_beam_centers.dec.deg[~obs_mask],
         "Dy",
         mec="r",
-        ms=10,
+        ms=5,
         label="Beam center with max SNR",
     )
 
     # ax1.legend(fontsize=18, loc=2)
+    ax1.set_title(
+        # f"Localisation: R.A. = {best_ra:g}$\pm${err_ra:g} deg, Dec. = {best_dec:g}$\pm${err_dec:g} deg",
+        f"Localisation: R.A. = {best_ra:g}$\pm${sym_err:g} deg, Dec. = {best_dec:g}$\pm${sym_err:g} deg",
+        fontsize=18,
+    )
     ax1.set_xlabel("R.A. (ICRS)", fontsize=20, ha="center")
     ax1.set_ylabel("Dec. (ICRS)", fontsize=20, ha="center")
     ax1.minorticks_on()
@@ -306,7 +382,6 @@ def seekat(
         obs_snr, obs_mask, obs_weights, nsim=cov_nsim, plot_cov=plot_cov
     )
     chi2 = chi2_calc(tabp_look, obs_mask, obs_snr, obs_weights, covariance)
-    print(chi2.shape)
     localization_fig = chi2_plot(
         chi2,
         grid_ra,
@@ -315,5 +390,6 @@ def seekat(
         obs_mask,
         contour_levels=loc_contour_levels,
         truth_coords=truth_coords,
+        window=True,
     )
     return localization_fig, cov_fig
