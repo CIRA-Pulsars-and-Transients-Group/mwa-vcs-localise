@@ -134,7 +134,7 @@ def beam_plot(beam_cen_coords, tabp, grid_ra, grid_dec, label, contours=True):
     return fig
 
 
-def covariance_estimation(obs_snr, obs_mask, obs_weights, nsim=1000, plot_cov=True):
+def covariance_estimation(obs_snr, obs_mask, obs_weights, nsim=10000, plot_cov=True):
     simulation_snr = st.multivariate_normal(obs_snr).rvs(nsim)
     simulation_ratio = (
         simulation_snr[:, obs_mask] / simulation_snr.T[obs_snr.argmax()][:, None]
@@ -372,7 +372,7 @@ def seekat(
     tabp_look,
     grid_ra,
     grid_dec,
-    cov_nsim=1000,
+    cov_nsim=10000,
     plot_cov=True,
     loc_contour_levels=[20, 40, 60, 100],
     truth_coords=None,
