@@ -360,8 +360,8 @@ def main():
                 grid_dec,
                 truth_coords=true_coords,
             )
-            loc.savefig("localisation.png", dpi=300)
-            cov.savefig("covariance.png", dpi=300)
+            loc.savefig("localisation.png", dpi=200)
+            cov.savefig("covariance.png", dpi=200)
         else:
             print("ERROR: No detection file provided.")
 
