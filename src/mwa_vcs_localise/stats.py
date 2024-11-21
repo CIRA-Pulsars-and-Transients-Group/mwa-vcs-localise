@@ -216,7 +216,7 @@ def chi2_plot(
     obs_mask,
     contour_levels=None,
     truth_coords=None,
-    window=True,
+    window=None,
 ):
     map_extent = [grid_ra.min(), grid_ra.max(), grid_dec.min(), grid_dec.max()]
 
@@ -226,8 +226,9 @@ def chi2_plot(
     contour_cmap = cms.get_sub_cmap(cms.ember, 0.4, 0.9)
 
     if window:
+        scale = 3
         print(
-            "Placing Gaussian window at central TAB with width ~ FWHM ~ 2.355 * max. TAB separation."
+            f"Placing Gaussian window at central TAB position, with variance ~ {scale} * max. TAB separation."
         )
         ctr_coord = np.squeeze(obs_beam_centers[~obs_mask])
         dists = [
@@ -235,29 +236,31 @@ def chi2_plot(
         ]
         max_dist = max(dists)
         mu = np.array([ctr_coord.ra.deg, ctr_coord.dec.deg])
-        sigma = np.array(
+        var = np.array(
             [
                 [max_dist, 0],
                 [0, max_dist],
             ]
         )
-        kern = st.multivariate_normal(mean=mu, cov=2.355 * sigma)
+        kern = st.multivariate_normal(mean=mu, cov=scale * var)
         wt = 1 / kern.pdf(np.dstack((grid_ra, grid_dec)))
     else:
         wt = 1.0
 
     chi2 = wt * chi2
-    contour_levels = np.percentile(chi2, 100 - np.array([99.9, 99.99, 99.999]))[::-1]
+    sig_intervals = np.array([99.9, 99.99, 99.999])
+    print(f"Significance intervals set at: {sig_intervals}")
+    contour_levels = np.percentile(chi2, 100 - sig_intervals)[::-1]
     cmapnorm = colors.LogNorm(
         vmin=np.percentile(chi2, 0.0001), vmax=np.percentile(chi2, 10), clip=False
     )
 
-    fig = plt.figure(figsize=(14, 10), constrained_layout=True)
+    # fig = plt.figure(figsize=(14, 10), constrained_layout=True)
+    fig = plt.figure(figsize=(8, 6), constrained_layout=True)
     ax1 = fig.add_subplot(1, 1, 1)
 
     # chi2 map
     ax1_img = ax1.imshow(
-        # np.log(chi2),
         chi2,
         aspect=aspect,
         extent=map_extent,
@@ -269,12 +272,26 @@ def chi2_plot(
     ax1_ctr = ax1.contour(
         chi2,
         levels=contour_levels,
-        # np.log(chi2),
-        # levels=np.log(contour_levels),
         extent=map_extent,
         origin=origin,
         cmap=contour_cmap,
     )
+    # weighting window
+    if window:
+        fmt = {}
+        lvls = np.array([0.1, 0.5, 0.9])
+        strs = lvls.astype(str)
+        ax1_ctr_win = ax1.contour(
+            1 / wt,
+            levels=lvls * (1 / wt).max(),
+            extent=map_extent,
+            origin=origin,
+            colors="w",
+            linestyles="dotted",
+        )
+        for l, s in zip(ax1_ctr_win.levels, strs):
+            fmt[l] = s
+        ax1.clabel(ax1_ctr_win, ax1_ctr_win.levels, fmt=fmt, inline=True, fontsize=8)
 
     # Coordinates associated with minimum chi2
     best_ra_index, best_dec_index = np.unravel_index(np.argmin(chi2), chi2.shape)
@@ -302,8 +319,8 @@ def chi2_plot(
         marker="none",
         color="w",
         markersize=10,
-        mew=3,
-        label="Best fit",
+        mew=1,
+        label="Best fit localisation",
     )
 
     # Truth Coordinates for comparison
@@ -312,7 +329,7 @@ def chi2_plot(
             truth_coords.ra.deg,
             truth_coords.dec.deg,
             "xr",
-            markersize=5,
+            markersize=10,
             mew=1,
             label="Truth",
         )
@@ -324,7 +341,7 @@ def chi2_plot(
         "Dy",
         mec="k",
         ms=5,
-        label="Beam centers",
+        label="Beam centres",
     )
     ax1.plot(
         obs_beam_centers.ra.deg[~obs_mask],
@@ -332,21 +349,24 @@ def chi2_plot(
         "Dy",
         mec="r",
         ms=5,
-        label="Beam center with max SNR",
+        label="Beam centre with max. S/N",
     )
 
-    # ax1.legend(fontsize=18, loc=2)
-    ax1.set_title(
-        # f"Localisation: R.A. = {best_ra:g}$\pm${err_ra:g} deg, Dec. = {best_dec:g}$\pm${err_dec:g} deg",
-        f"Localisation: R.A. = {best_ra:g}$\pm${sym_err:g} deg, Dec. = {best_dec:g}$\pm${sym_err:g} deg",
-        fontsize=18,
-    )
-    ax1.set_xlabel("R.A. (ICRS)", fontsize=20, ha="center")
-    ax1.set_ylabel("Dec. (ICRS)", fontsize=20, ha="center")
+    # ax1.set_xlim(72.55, 73.35)
+    # ax1.set_ylim(-34.62, -34.02)
+    ax1.legend(fontsize=10, loc=2)
+    # ax1.set_title(
+    #     # f"Localisation: R.A. = {best_ra:g}$\pm${err_ra:g} deg, Dec. = {best_dec:g}$\pm${err_dec:g} deg",
+    #     f"Localisation: R.A. = {best_ra:g}$\pm${sym_err:g} deg, Dec. = {best_dec:g}$\pm${sym_err:g} deg",
+    #     fontsize=12,
+    #     pad=10,
+    # )
+    ax1.set_xlabel("Right Ascension (deg)", fontsize=14, ha="center")
+    ax1.set_ylabel("Declination (deg)", fontsize=14, ha="center")
     ax1.minorticks_on()
-    ax1.tick_params(axis="both", which="major", labelsize=18)
-    ax1.tick_params(axis="both", which="major", length=9)
-    ax1.tick_params(axis="both", which="minor", length=4.5)
+    ax1.tick_params(axis="both", which="major", labelsize=12)
+    # ax1.tick_params(axis="both", which="major", length=9)
+    # ax1.tick_params(axis="both", which="minor", length=4.5)
     ax1.tick_params(axis="both", which="both", direction="out", right=True, top=True)
 
     cbar = fig.colorbar(
@@ -359,11 +379,11 @@ def chi2_plot(
         pad=0.01,
     )
     cbar.add_lines(ax1_ctr)
-    cbar.ax.set_title(r"$\chi^2$", fontsize=18, ha="center")
+    cbar.ax.set_title(r"$\chi^2$", fontsize=12, ha="center")
     # cbar.ax.xaxis.set_ticks_position("top")
-    cbar.ax.tick_params(which="major", direction="in", length=9, bottom=True, top=True)
-    cbar.ax.tick_params(which="minor", direction="in", length=5, bottom=True, top=True)
-    cbar.ax.yaxis.set_tick_params(labelsize=18)
+    # cbar.ax.tick_params(which="major", direction="in", length=9, bottom=True, top=True)
+    # cbar.ax.tick_params(which="minor", direction="in", length=5, bottom=True, top=True)
+    cbar.ax.yaxis.set_tick_params(labelsize=11)
     return fig
 
 
