@@ -18,7 +18,7 @@ from astropy.table import Table
 import matplotlib.pyplot as plt
 import matplotlib.colors as colors
 from matplotlib import rc
-import cmasher as cms
+import cmasher as cm
 
 
 def __beam_reader(data_directory):
@@ -77,9 +77,9 @@ def beam_plot(beam_cen_coords, tabp, grid_ra, grid_dec, label, contours=True):
 
     aspect = "equal"
 
-    cmap = cms.get_sub_cmap(cms.cosmic, 0.1, 0.9)
+    cmap = cm.get_sub_cmap(cm.cosmic, 0.1, 0.9)
     cmap.set_bad("red")
-    contour_cmap = cms.get_sub_cmap(cms.cosmic_r, 0.1, 0.9)
+    contour_cmap = cm.get_sub_cmap(cm.cosmic_r, 0.1, 0.9)
     cmapnorm_sum = colors.Normalize(vmin=1e-5, vmax=0.1, clip=True)
     cmapnorm_indiv = colors.Normalize(vmin=1e-5, vmax=0.05, clip=True)
 
@@ -152,7 +152,7 @@ def covariance_estimation(obs_snr, obs_mask, obs_weights, nsim=10000, plot_cov=T
 
     if plot_cov:
         fig = plt.figure(figsize=(20, 10))
-        cmap = cms.get_sub_cmap(cms.guppy, 0.0, 1.0)
+        cmap = cm.get_sub_cmap(cm.guppy, 0.0, 1.0)
 
         ax1 = fig.add_subplot(1, 1, 1)
         ax1_img = ax1.imshow(covariance, cmap=cmap, vmin=-1, vmax=1, aspect="auto")
@@ -196,19 +196,25 @@ def chi2_calc(tabp_look, obs_mask, obs_snr, obs_weights, cov):
     return chi2
 
 
-def estimate_errors_from_contours(ctr_set, ref_ra, ref_dec, idx=2):
-    sym_err = 1.0e6
-    for pa in range(len(ctr_set.allsegs[idx])):
-        pth = ctr_set.allsegs[idx][pa]
-        d = sp.distance.cdist(pth, pth)
-        x, y = pth[list(np.unravel_index(np.argmax(d), d.shape))].T
-        err = max(np.max(np.abs(ref_ra - x)), np.max(np.abs(abs(ref_dec) - abs(y))))
-        if err < sym_err:
-            sym_err = err
-    return sym_err
+def estimate_errors_from_contours(ctr_set):
+    max_distance = 0
+    for ic, collection in enumerate(ctr_set.collections):
+        for path in collection.get_paths():
+            # Get the vertices of the contour path
+            vertices = path.vertices
+            # Compute pairwise distances between vertices
+            distances = sp.distance.cdist(vertices, vertices)
+            # Get the maximum distance in this set of vertices
+            max_distance_in_path = np.max(distances)
+            # Update the overall maximum distance if needed
+            max_distance = max(max_distance, max_distance_in_path)
+
+    # return half the distance (as a symmetrical error)
+    return max_distance / 2
 
 
 def chi2_plot(
+    tab0,
     chi2,
     grid_ra,
     grid_dec,
@@ -217,15 +223,19 @@ def chi2_plot(
     contour_levels=None,
     truth_coords=None,
     window=None,
+    show_bestfit_loc=True,
 ):
     map_extent = [grid_ra.min(), grid_ra.max(), grid_dec.min(), grid_dec.max()]
 
     aspect = "auto"
     origin = "lower"
-    cmap = cms.get_sub_cmap(cms.cosmic_r, 0.1, 0.9)
-    contour_cmap = cms.get_sub_cmap(cms.ember, 0.4, 0.9)
+    # cmap = cm.get_sub_cmap(cm.sapphire_r, 0.1, 0.9)
+    cmap = cm.sapphire_r
+    ctr_cmap = cm.get_sub_cmap(cm.ember, 0.4, 0.9)
+    # ctr_cmap = cm.ember
+    # cmapnorm = colors.LogNorm()
 
-    if window:
+    if window == "gaus":
         scale = 3
         print(
             f"Placing Gaussian window at central TAB position, with variance ~ {scale} * max. TAB separation."
@@ -244,93 +254,97 @@ def chi2_plot(
         )
         kern = st.multivariate_normal(mean=mu, cov=scale * var)
         wt = 1 / kern.pdf(np.dstack((grid_ra, grid_dec)))
+    elif window == "tab":
+        wt = 1 / tab0
     else:
         wt = 1.0
 
     chi2 = wt * chi2
-    sig_intervals = np.array([99.9, 99.99, 99.999])
+    lnL = -0.5 * chi2
+    prob = np.exp(lnL) / np.exp(lnL).sum()
+    sig_intervals = np.array([68.27, 95.45, 99.73])  # 1, 2, 3-sigma
     print(f"Significance intervals set at: {sig_intervals}")
-    contour_levels = np.percentile(chi2, 100 - sig_intervals)[::-1]
-    cmapnorm = colors.LogNorm(
-        vmin=np.percentile(chi2, 0.0001), vmax=np.percentile(chi2, 10), clip=False
-    )
+    if contour_levels == None:
+        contour_levels = np.percentile(prob[prob > 1e-6], sig_intervals)
+        print(contour_levels)
 
     # fig = plt.figure(figsize=(14, 10), constrained_layout=True)
     fig = plt.figure(figsize=(8, 6), constrained_layout=True)
     ax1 = fig.add_subplot(1, 1, 1)
 
-    # chi2 map
+    # localisation map
     ax1_img = ax1.imshow(
-        chi2,
+        prob,
         aspect=aspect,
         extent=map_extent,
         cmap=cmap,
-        norm=cmapnorm,
+        # norm=cmapnorm,
         origin=origin,
+        vmin=0.5 * contour_levels.min(),
     )
     # contours for specific levels of chi2
     ax1_ctr = ax1.contour(
-        chi2,
+        prob,
         levels=contour_levels,
         extent=map_extent,
         origin=origin,
-        cmap=contour_cmap,
+        cmap=ctr_cmap,
     )
     # weighting window
-    if window:
-        fmt = {}
-        lvls = np.array([0.1, 0.5, 0.9])
-        strs = lvls.astype(str)
-        ax1_ctr_win = ax1.contour(
-            1 / wt,
-            levels=lvls * (1 / wt).max(),
-            extent=map_extent,
-            origin=origin,
-            colors="w",
-            linestyles="dotted",
-        )
-        for l, s in zip(ax1_ctr_win.levels, strs):
-            fmt[l] = s
-        ax1.clabel(ax1_ctr_win, ax1_ctr_win.levels, fmt=fmt, inline=True, fontsize=8)
+    # if window == "gaus":
+    #     fmt = {}
+    #     lvls = np.array([0.1, 0.5, 0.9])
+    #     strs = lvls.astype(str)
+    #     ax1_ctr_win = ax1.contour(
+    #         1 / wt,
+    #         levels=lvls * (1 / wt).max(),
+    #         extent=map_extent,
+    #         origin=origin,
+    #         colors="w",
+    #         linestyles="dotted",
+    #     )
+    #     for l, s in zip(ax1_ctr_win.levels, strs):
+    #         fmt[l] = s
+    #     ax1.clabel(ax1_ctr_win, ax1_ctr_win.levels, fmt=fmt, inline=True, fontsize=8)
 
     # Coordinates associated with minimum chi2
-    best_ra_index, best_dec_index = np.unravel_index(np.argmin(chi2), chi2.shape)
+    # best_ra_index, best_dec_index = np.unravel_index(np.argmin(lnL), lnL.shape)
+    best_ra_index, best_dec_index = np.unravel_index(np.argmax(prob), prob.shape)
     best_ra, best_dec = (
         grid_ra[best_ra_index, best_dec_index],
         grid_dec[best_ra_index, best_dec_index],
     )
 
     # Get the errors (taken from the contours).
-    # We want to access the contour levels and then search for the smallest separation
-    # which will correspond to the contour of the localisation peak
-    sym_err_ext = estimate_errors_from_contours(ax1_ctr, best_ra, best_dec, idx=2)
-    sym_err_int = estimate_errors_from_contours(ax1_ctr, best_ra, best_dec, idx=1)
+    # We search all vertices of each contour set and find the maximum distance.
+    # If the contours are set at 1,2,3-sigma levels, then the largest distances
+    # corresponds roughly to the 3-sigma uncertainty.
+    sym_err = estimate_errors_from_contours(ax1_ctr)
     print(f"best R.A. = {best_ra:g} deg, best Dec. = {best_dec:g} deg")
-    print(f"exterior sym. pos. err. = {sym_err_ext*60:g} arcmin")
-    print(f"interior sym. pos. err. = {sym_err_int*60:g} arcmin")
-    # Use the interior error for plotting
-    sym_err = sym_err_int
+    print(f"sym. pos. err. = {sym_err*60:g} arcmin")
 
-    ax1.errorbar(
-        best_ra,
-        best_dec,
-        yerr=sym_err,
-        xerr=sym_err,
-        marker="none",
-        color="w",
-        markersize=10,
-        mew=1,
-        label="Best fit localisation",
-    )
+    if show_bestfit_loc:
+        ax1.errorbar(
+            best_ra,
+            best_dec,
+            yerr=sym_err,
+            xerr=sym_err,
+            marker="none",
+            color="k",
+            markersize=1,
+            mew=1,
+            label="Best fit localisation",
+        )
 
     # Truth Coordinates for comparison
     if truth_coords != None:
         ax1.plot(
             truth_coords.ra.deg,
             truth_coords.dec.deg,
-            "xr",
-            markersize=10,
+            "or",
+            markersize=3,
             mew=1,
+            mfc="none",
             label="Truth",
         )
 
@@ -352,8 +366,8 @@ def chi2_plot(
         label="Beam centre with max. S/N",
     )
 
-    # ax1.set_xlim(72.55, 73.35)
-    # ax1.set_ylim(-34.62, -34.02)
+    ax1.set_xlim(72.9, 73.1)
+    ax1.set_ylim(-34.4, -34.2)
     ax1.legend(fontsize=10, loc=2)
     # ax1.set_title(
     #     # f"Localisation: R.A. = {best_ra:g}$\pm${err_ra:g} deg, Dec. = {best_dec:g}$\pm${err_dec:g} deg",
@@ -377,9 +391,12 @@ def chi2_plot(
         location="right",
         # aspect=30,
         pad=0.01,
+        extend="min",
     )
     cbar.add_lines(ax1_ctr)
-    cbar.ax.set_title(r"$\chi^2$", fontsize=12, ha="center")
+    # cbar.ax.set_title(r"$\chi^2$", fontsize=12, ha="center")
+    # cbar.ax.set_title(r"$\ln \mathcal{L}$", fontsize=12, ha="center")
+    cbar.ax.set_title(r"$Pr$", fontsize=12, ha="center")
     # cbar.ax.xaxis.set_ticks_position("top")
     # cbar.ax.tick_params(which="major", direction="in", length=9, bottom=True, top=True)
     # cbar.ax.tick_params(which="minor", direction="in", length=5, bottom=True, top=True)
@@ -394,7 +411,6 @@ def seekat(
     grid_dec,
     cov_nsim=10000,
     plot_cov=True,
-    loc_contour_levels=[20, 40, 60, 100],
     truth_coords=None,
 ):
     obs_beam_centers, obs_snr, obs_weights, obs_mask = snr_reader(detfile)
@@ -403,13 +419,15 @@ def seekat(
     )
     chi2 = chi2_calc(tabp_look, obs_mask, obs_snr, obs_weights, covariance)
     localization_fig = chi2_plot(
+        tabp_look[obs_snr.argmax(), ...].squeeze(),
         chi2,
         grid_ra,
         grid_dec,
         obs_beam_centers,
         obs_mask,
-        contour_levels=loc_contour_levels,
+        contour_levels=None,
         truth_coords=truth_coords,
-        window=True,
+        window="tab",
+        show_bestfit_loc=True,
     )
     return localization_fig, cov_fig
