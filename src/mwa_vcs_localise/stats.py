@@ -213,6 +213,48 @@ def estimate_errors_from_contours(ctr_set):
     return max_distance / 2
 
 
+def CDF(s):
+    # Cumulative distribution function for 2D Gaussian
+    return  1 - np.exp(-0.5 * s ** 2)
+
+
+def mahal_error(prob, sigma=1):
+    likelihood_flat_sorted = np.sort(prob, axis=None)
+    likelihood_flat_sorted_index = np.argsort(prob, axis=None)
+    likelihood_flat_sorted_cumsum = np.cumsum(prob.flatten()[likelihood_flat_sorted_index])
+
+    if len(np.nonzero(likelihood_flat_sorted_cumsum > (1 - CDF(sigma)))[0]) != 0:
+        # Index where cum sum goes above sigma percentage
+        index_sigma_above = np.nonzero(likelihood_flat_sorted_cumsum > 
+                        (1 - CDF(sigma)))[0]
+
+        # Minimum likelihood included in error
+        likelihood_index_sigma_sorted = likelihood_flat_sorted_index[index_sigma_above]
+
+        likelihood_sigma_level = likelihood_flat_sorted[index_sigma_above[0]]
+
+        likelihood_index_sigma_original = np.unravel_index(likelihood_index_sigma_sorted, 
+                                                            prob.shape)
+
+        """
+        y_lower_index, y_higher_index = np.sort(likelihood_index_sigma_original[0])[[np.s_[0], 
+                                                np.s_[-1]]]
+        x_lower_index, x_higher_index = np.sort(likelihood_index_sigma_original[1])[[np.s_[0], 
+                                                np.s_[-1]]]
+        max_likehood_index = np.unravel_index(np.argmax(prob), prob.shape)
+
+        x_lower = x_lower_index, max_likehood_index[0]
+        x_higher = x_higher_index, max_likehood_index[0]
+        y_lower = max_likehood_index[1], y_lower_index
+        y_higher = max_likehood_index[1], y_higher_index
+        """
+        return likelihood_sigma_level#, [x_lower, x_higher, y_lower, y_higher]
+
+    else:
+        print('Could not find error')
+        exit()
+
+
 def chi2_plot(
     tab0,
     chi2,
@@ -265,7 +307,8 @@ def chi2_plot(
     sig_intervals = np.array([68.27, 95.45, 99.73])  # 1, 2, 3-sigma
     print(f"Significance intervals set at: {sig_intervals}")
     if contour_levels == None:
-        contour_levels = np.percentile(prob[prob > 1e-6], sig_intervals)
+        #contour_levels = np.percentile(prob[prob > 1e-6], sig_intervals)
+        contour_levels = np.array([mahal_error(prob[prob > 1e-6], s) for s in [3,2,1] ] )
         print(contour_levels)
 
     # fig = plt.figure(figsize=(14, 10), constrained_layout=True)
