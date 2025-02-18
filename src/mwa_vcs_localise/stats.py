@@ -8,6 +8,7 @@
 import numpy as np
 import scipy.stats as st
 import scipy.spatial as sp
+from scipy.ndimage import label
 
 # Astropy
 import astropy.units as u
@@ -216,9 +217,68 @@ def estimate_errors_from_contours(ctr_set, contour_labels=None) -> float:
     return max_distance / 2
 
 
+def estimate_errors_from_islands(
+    pmap: np.ndarray,
+    grid_ra: np.ndarray,
+    grid_dec: np.ndarray,
+    ra_idx: int,
+    dec_idx: int,
+    clvl: float,
+) -> tuple[float, tuple[float, float] | None, int]:
+    """Calculate the symmetrical conservative error based on the probability islands
+    and their extent relative to the peak localisation
+
+    :param pmap: The localisation probability map.
+    :type pmap: np.ndarray
+    :param grid_ra: The 2-D mesh grid in R.A. that defines the probability map coordinate.
+    :type grid_ra: np.ndarray
+    :param grid_dec: The 2-D mesh grid in Dec. that defines the probability map coordinate.
+    :type grid_dec: np.ndarray
+    :param ra_idx: The R.A. grid index corresponding to the peak probability.
+    :type ra_idx: int
+    :param dec_idx: The Dec. grid index corresponding to the peak probability.
+    :type dec_idx: int
+    :param clvl: A contour level (in the same units as the probability map) that defines the uncertainty region.
+    :type clvl: float
+
+    :return (max_dist, max_dist_pt, num_islands): A tuple containing -
+                The maximum distance from the peak localisation pixel to the provided contour level (i.e., the symmetric uncertainty),
+                The pixel coordinates corresponding to the maximum distance, and
+                The number of probability islands found in the image (typically 1)
+    rtype: tuple[float, tuple[float, float] | None, int]
+    """
+    # Using those contour levels, estimate the maximum distance from the peak to
+    # the corresponding contour and take this as the uncertainty. We collect the
+    # islands of probability into labelled groups and only use the island which
+    # contains the peak probability to calculate the uncertainties.
+    peak_ra, peak_dec = (grid_ra[ra_idx, dec_idx], grid_dec[ra_idx, dec_idx])
+    contour_mask = pmap >= clvl
+    labeled_prob_map, num_islands = label(contour_mask)
+    peak_island = labeled_prob_map[ra_idx, dec_idx]
+    same_island_pts = np.where(labeled_prob_map == peak_island)
+
+    max_dist = 0.0
+    max_dist_pt = None
+    for pt in zip(*same_island_pts):
+        pt_ra = grid_ra[pt[0], pt[1]]
+        pt_dec = grid_dec[pt[0], pt[1]]
+        dist = sp.distance.euclidean([peak_ra, peak_dec], [pt_ra, pt_dec])
+        if dist > max_dist:
+            max_dist = dist
+            max_dist_pt = pt
+
+    return max_dist, max_dist_pt, num_islands
+
+
 def get2Dcdf(s: float) -> float:
-    # Cumulative distribution function for
-    # 2D Gaussian at a desired sigma level, s
+    """Compute the Gaussian CDF value for a give sigma value
+
+    :param s: The desired "sigma" quantity used to evaluate the CDF value.
+    :type s: float
+
+    :return cdf: The Gaussian CDF value corresponding to the input "sigma" level.
+    :rtype: float
+    """
     return 1 - np.exp(-0.5 * s**2)
 
 
@@ -230,7 +290,7 @@ def mahal_error(prob: np.ndarray, sigma: float = 1) -> tuple[float | None, list 
     :type prob: np.ndarray
     :param sigma:  The equivalent Gaussian sigma desired to measure. Defaults to 1.
     :type sigma: float
-    :return: The probability density value associated with the input sigma level.
+    :return prob_sigma_level: The probability density value associated with the input sigma level.
     If a sensible value cannot be found, the function return None.
     :rtype: float | None
     """
@@ -302,29 +362,37 @@ def chi2_plot(
     prob[prob < 1e-9] = 0
 
     # Coordinates associated with minimum chi2
-    # best_ra_index, best_dec_index = np.unravel_index(np.argmin(lnL), lnL.shape)
     best_ra_index, best_dec_index = np.unravel_index(np.argmax(prob), prob.shape)
     best_ra, best_dec = (
         grid_ra[best_ra_index, best_dec_index],
         grid_dec[best_ra_index, best_dec_index],
     )
 
+    # Compute the contour levels via the Mahalanobis radius at various
+    # equivalent "sigma" levels, under the assumption of a Gaussian distribution
     sigma_levels = [3, 2, 1]
-    print(f"Significance intervals set at: {sigma_levels}")
+    print(f"Significance intervals set at: {sigma_levels}-sigma")
     contour_levels = np.array([mahal_error(prob, s) for s in sigma_levels])
+
+    sym_err, _, nislands = estimate_errors_from_islands(
+        prob, grid_ra, grid_dec, best_ra_index, best_dec_index, contour_levels.min()
+    )
+
+    print(f"best R.A. = {best_ra:g} deg, best Dec. = {best_dec:g} deg")
+    print(f"sym. pos. err. = {sym_err*60:g} arcmin")
 
     fig = plt.figure(figsize=(8, 6), constrained_layout=True)
     ax1 = fig.add_subplot(1, 1, 1)
 
     # localisation map
-    ax1_img = ax1.imshow(
+    ax1.imshow(
         prob,
         aspect=aspect,
         extent=map_extent,
         cmap=cmap,
         # norm=cmapnorm,
         origin=origin,
-        vmin=0.5 * contour_levels.min(),
+        vmin=contour_levels.min(),
     )
 
     # contours for specific levels of chi2
@@ -335,14 +403,6 @@ def chi2_plot(
         origin=origin,
         cmap=ctr_cmap,
     )
-
-    # Get the errors (taken from the contours).
-    # We search all vertices of each contour set and find the maximum distance.
-    # If the contours are set at 1,2,3-sigma levels, then the largest distances
-    # corresponds roughly to the 3-sigma uncertainty.
-    sym_err = estimate_errors_from_contours(ax1_ctr, sigma_levels)
-    print(f"best R.A. = {best_ra:g} deg, best Dec. = {best_dec:g} deg")
-    print(f"sym. pos. err. = {sym_err*60:g} arcmin")
 
     # Beams
     ax1.plot(
@@ -377,14 +437,16 @@ def chi2_plot(
         ax1_img_inset = ax1.inset_axes(
             [0.65, 0.65, 0.34, 0.34], xlim=(x1, x2), ylim=(y1, y2)
         )
+        ax1_img_inset.set_aspect(ax1.get_aspect())
+
         ax1_img_inset.imshow(
             prob,
             aspect=aspect,
             extent=map_extent,
             cmap=cmap,
-            # norm=cmapnorm,
+            interpolation="none",
             origin=origin,
-            vmin=0.5 * contour_levels.min(),
+            vmin=contour_levels.min(),
         )
         ax1_img_inset.contour(
             prob,
@@ -393,7 +455,6 @@ def chi2_plot(
             origin=origin,
             cmap=ctr_cmap,
         )
-
         ax1.indicate_inset_zoom(ax1_img_inset, edgecolor="black")
         pad = (
             np.array(
@@ -406,13 +467,15 @@ def chi2_plot(
             .max()
         )
 
+        # Adjust the limits, and bias the x-range to have more space on the right
+        # so that the inset box is less likely to overalp elements.
         ax1.set_xlim(
             min(obs_beam_centers.ra.deg) - pad,
-            max(obs_beam_centers.ra.deg) + pad,
+            max(obs_beam_centers.ra.deg) + 1.5 * pad,
         )
         ax1.set_ylim(
-            max(obs_beam_centers.dec.deg) + pad,
             min(obs_beam_centers.dec.deg) - pad,
+            max(obs_beam_centers.dec.deg) + pad,
         )
 
         # Truth Coordinates for comparison
