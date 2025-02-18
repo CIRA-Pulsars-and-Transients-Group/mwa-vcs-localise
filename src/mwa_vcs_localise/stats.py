@@ -17,7 +17,6 @@ from astropy.table import Table
 # For visualization
 import matplotlib.pyplot as plt
 import matplotlib.colors as colors
-from matplotlib import rc
 import cmasher as cm
 
 
@@ -100,7 +99,7 @@ def beam_plot(beam_cen_coords, tabp, grid_ra, grid_dec, label, contours=True):
 
     if contours:
         for ls, look in enumerate(tabp):
-            ct = ax1.contour(
+            ax1.contour(
                 look,
                 origin="image",
                 extent=map_extent,
@@ -185,6 +184,10 @@ def covariance_estimation(obs_snr, obs_mask, obs_weights, nsim=10000, plot_cov=T
 
 
 def chi2_calc(tabp_look, obs_mask, obs_snr, obs_weights, cov):
+    # The below operations essentially compute the least-squares
+    # regressions on the 2D maps. Because the arrays are multi-dimensional
+    # there's a bit of fiddling to make sure multiplcations/summations
+    # happen across the correct dimensions.
     P_array = tabp_look[obs_mask, ...] / tabp_look[obs_snr.argmax(), ...]
     R_array = obs_weights[:, None, None] - P_array.squeeze()
     cov_inv = np.linalg.inv(cov)
@@ -196,10 +199,10 @@ def chi2_calc(tabp_look, obs_mask, obs_snr, obs_weights, cov):
     return chi2
 
 
-def estimate_errors_from_contours(ctr_set):
+def estimate_errors_from_contours(ctr_set, contour_labels=None) -> float:
     max_distance = 0
     for ic, collection in enumerate(ctr_set.collections):
-        for path in collection.get_paths():
+        for ip, path in enumerate(collection.get_paths()):
             # Get the vertices of the contour path
             vertices = path.vertices
             # Compute pairwise distances between vertices
@@ -213,46 +216,40 @@ def estimate_errors_from_contours(ctr_set):
     return max_distance / 2
 
 
-def CDF(s):
-    # Cumulative distribution function for 2D Gaussian
-    return  1 - np.exp(-0.5 * s ** 2)
+def get2Dcdf(s: float) -> float:
+    # Cumulative distribution function for
+    # 2D Gaussian at a desired sigma level, s
+    return 1 - np.exp(-0.5 * s**2)
 
 
-def mahal_error(prob, sigma=1):
-    likelihood_flat_sorted = np.sort(prob, axis=None)
-    likelihood_flat_sorted_index = np.argsort(prob, axis=None)
-    likelihood_flat_sorted_cumsum = np.cumsum(prob.flatten()[likelihood_flat_sorted_index])
+def mahal_error(prob: np.ndarray, sigma: float = 1) -> tuple[float | None, list | None]:
+    """Calculate the Mahalanobis radius to provide an error on the localisation,
+    under the assumption that the underlying probability density is ~Gaussian.
 
-    if len(np.nonzero(likelihood_flat_sorted_cumsum > (1 - CDF(sigma)))[0]) != 0:
-        # Index where cum sum goes above sigma percentage
-        index_sigma_above = np.nonzero(likelihood_flat_sorted_cumsum > 
-                        (1 - CDF(sigma)))[0]
+    :param prob: The 2D probability density map.
+    :type prob: np.ndarray
+    :param sigma:  The equivalent Gaussian sigma desired to measure. Defaults to 1.
+    :type sigma: float
+    :return: The probability density value associated with the input sigma level.
+    If a sensible value cannot be found, the function return None.
+    :rtype: float | None
+    """
+    prob_flat_sorted = np.sort(prob, axis=None)
+    prob_flat_sorted_index = np.argsort(prob, axis=None)
+    prob_flat_sorted_cumsum = np.cumsum(prob.flatten()[prob_flat_sorted_index])
 
-        # Minimum likelihood included in error
-        likelihood_index_sigma_sorted = likelihood_flat_sorted_index[index_sigma_above]
+    # Compute the survival function value
+    sf = 1 - get2Dcdf(sigma)
 
-        likelihood_sigma_level = likelihood_flat_sorted[index_sigma_above[0]]
-
-        likelihood_index_sigma_original = np.unravel_index(likelihood_index_sigma_sorted, 
-                                                            prob.shape)
-
-        """
-        y_lower_index, y_higher_index = np.sort(likelihood_index_sigma_original[0])[[np.s_[0], 
-                                                np.s_[-1]]]
-        x_lower_index, x_higher_index = np.sort(likelihood_index_sigma_original[1])[[np.s_[0], 
-                                                np.s_[-1]]]
-        max_likehood_index = np.unravel_index(np.argmax(prob), prob.shape)
-
-        x_lower = x_lower_index, max_likehood_index[0]
-        x_higher = x_higher_index, max_likehood_index[0]
-        y_lower = max_likehood_index[1], y_lower_index
-        y_higher = max_likehood_index[1], y_higher_index
-        """
-        return likelihood_sigma_level#, [x_lower, x_higher, y_lower, y_higher]
-
+    prob_sigma_level = None
+    if len(np.nonzero(prob_flat_sorted_cumsum > sf)[0]) != 0:
+        # Index where cumulative sum goes above the corresponding survival function
+        index_sigma_above = np.nonzero(prob_flat_sorted_cumsum > sf)[0]
+        prob_sigma_level = prob_flat_sorted[index_sigma_above[0]]
     else:
-        print('Could not find error')
-        exit()
+        print("Unable to find a sensible error level.")
+
+    return prob_sigma_level
 
 
 def chi2_plot(
@@ -266,16 +263,14 @@ def chi2_plot(
     truth_coords=None,
     window=None,
     show_bestfit_loc=True,
+    locfig_lims=None,
 ):
     map_extent = [grid_ra.min(), grid_ra.max(), grid_dec.min(), grid_dec.max()]
 
     aspect = "auto"
     origin = "lower"
-    # cmap = cm.get_sub_cmap(cm.sapphire_r, 0.1, 0.9)
     cmap = cm.sapphire_r
     ctr_cmap = cm.get_sub_cmap(cm.ember, 0.4, 0.9)
-    # ctr_cmap = cm.ember
-    # cmapnorm = colors.LogNorm()
 
     if window == "gaus":
         scale = 3
@@ -304,14 +299,20 @@ def chi2_plot(
     chi2 = wt * chi2
     lnL = -0.5 * chi2
     prob = np.exp(lnL) / np.exp(lnL).sum()
-    sig_intervals = np.array([68.27, 95.45, 99.73])  # 1, 2, 3-sigma
-    print(f"Significance intervals set at: {sig_intervals}")
-    if contour_levels == None:
-        #contour_levels = np.percentile(prob[prob > 1e-6], sig_intervals)
-        contour_levels = np.array([mahal_error(prob[prob > 1e-6], s) for s in [3,2,1] ] )
-        print(contour_levels)
+    prob[prob < 1e-9] = 0
 
-    # fig = plt.figure(figsize=(14, 10), constrained_layout=True)
+    # Coordinates associated with minimum chi2
+    # best_ra_index, best_dec_index = np.unravel_index(np.argmin(lnL), lnL.shape)
+    best_ra_index, best_dec_index = np.unravel_index(np.argmax(prob), prob.shape)
+    best_ra, best_dec = (
+        grid_ra[best_ra_index, best_dec_index],
+        grid_dec[best_ra_index, best_dec_index],
+    )
+
+    sigma_levels = [3, 2, 1]
+    print(f"Significance intervals set at: {sigma_levels}")
+    contour_levels = np.array([mahal_error(prob, s) for s in sigma_levels])
+
     fig = plt.figure(figsize=(8, 6), constrained_layout=True)
     ax1 = fig.add_subplot(1, 1, 1)
 
@@ -325,6 +326,7 @@ def chi2_plot(
         origin=origin,
         vmin=0.5 * contour_levels.min(),
     )
+
     # contours for specific levels of chi2
     ax1_ctr = ax1.contour(
         prob,
@@ -333,63 +335,14 @@ def chi2_plot(
         origin=origin,
         cmap=ctr_cmap,
     )
-    # weighting window
-    # if window == "gaus":
-    #     fmt = {}
-    #     lvls = np.array([0.1, 0.5, 0.9])
-    #     strs = lvls.astype(str)
-    #     ax1_ctr_win = ax1.contour(
-    #         1 / wt,
-    #         levels=lvls * (1 / wt).max(),
-    #         extent=map_extent,
-    #         origin=origin,
-    #         colors="w",
-    #         linestyles="dotted",
-    #     )
-    #     for l, s in zip(ax1_ctr_win.levels, strs):
-    #         fmt[l] = s
-    #     ax1.clabel(ax1_ctr_win, ax1_ctr_win.levels, fmt=fmt, inline=True, fontsize=8)
-
-    # Coordinates associated with minimum chi2
-    # best_ra_index, best_dec_index = np.unravel_index(np.argmin(lnL), lnL.shape)
-    best_ra_index, best_dec_index = np.unravel_index(np.argmax(prob), prob.shape)
-    best_ra, best_dec = (
-        grid_ra[best_ra_index, best_dec_index],
-        grid_dec[best_ra_index, best_dec_index],
-    )
 
     # Get the errors (taken from the contours).
     # We search all vertices of each contour set and find the maximum distance.
     # If the contours are set at 1,2,3-sigma levels, then the largest distances
     # corresponds roughly to the 3-sigma uncertainty.
-    sym_err = estimate_errors_from_contours(ax1_ctr)
+    sym_err = estimate_errors_from_contours(ax1_ctr, sigma_levels)
     print(f"best R.A. = {best_ra:g} deg, best Dec. = {best_dec:g} deg")
     print(f"sym. pos. err. = {sym_err*60:g} arcmin")
-
-    if show_bestfit_loc:
-        ax1.errorbar(
-            best_ra,
-            best_dec,
-            yerr=sym_err,
-            xerr=sym_err,
-            marker="none",
-            color="k",
-            markersize=1,
-            mew=1,
-            label="Best fit localisation",
-        )
-
-    # Truth Coordinates for comparison
-    if truth_coords != None:
-        ax1.plot(
-            truth_coords.ra.deg,
-            truth_coords.dec.deg,
-            "or",
-            markersize=3,
-            mew=1,
-            mfc="none",
-            label="Truth",
-        )
 
     # Beams
     ax1.plot(
@@ -409,15 +362,125 @@ def chi2_plot(
         label="Beam centre with max. S/N",
     )
 
-    ax1.set_xlim(72.9, 73.1)
-    ax1.set_ylim(-34.4, -34.2)
-    ax1.legend(fontsize=10, loc=2)
-    # ax1.set_title(
-    #     # f"Localisation: R.A. = {best_ra:g}$\pm${err_ra:g} deg, Dec. = {best_dec:g}$\pm${err_dec:g} deg",
-    #     f"Localisation: R.A. = {best_ra:g}$\pm${sym_err:g} deg, Dec. = {best_dec:g}$\pm${sym_err:g} deg",
-    #     fontsize=12,
-    #     pad=10,
-    # )
+    # Collect and fix legend handles and labels
+    ctr_h = ax1_ctr.legend_elements()[0]
+    ctr_l = [f"${s}\sigma$" for s in sigma_levels]
+    bpt_h, bpt_l = ax1.get_legend_handles_labels()
+    ax1.legend(handles=ctr_h + bpt_h, labels=ctr_l + bpt_l, fontsize=10)
+
+    # If set, now zoom on specified region
+    if locfig_lims == "zoom":
+        # add a zoomed version of the localisation island
+        excess = 3 * sym_err
+        x1, x2 = best_ra - excess, best_ra + excess
+        y1, y2 = best_dec - excess, best_dec + excess
+        ax1_img_inset = ax1.inset_axes(
+            [0.65, 0.65, 0.34, 0.34], xlim=(x1, x2), ylim=(y1, y2)
+        )
+        ax1_img_inset.imshow(
+            prob,
+            aspect=aspect,
+            extent=map_extent,
+            cmap=cmap,
+            # norm=cmapnorm,
+            origin=origin,
+            vmin=0.5 * contour_levels.min(),
+        )
+        ax1_img_inset.contour(
+            prob,
+            levels=contour_levels,
+            extent=map_extent,
+            origin=origin,
+            cmap=ctr_cmap,
+        )
+
+        ax1.indicate_inset_zoom(ax1_img_inset, edgecolor="black")
+        pad = (
+            np.array(
+                [
+                    obs_beam_centers[~obs_mask].separation(o).deg
+                    for o in obs_beam_centers[obs_mask]
+                ]
+            )
+            .flatten()
+            .max()
+        )
+
+        ax1.set_xlim(
+            min(obs_beam_centers.ra.deg) - pad,
+            max(obs_beam_centers.ra.deg) + pad,
+        )
+        ax1.set_ylim(
+            max(obs_beam_centers.dec.deg) + pad,
+            min(obs_beam_centers.dec.deg) - pad,
+        )
+
+        # Truth Coordinates for comparison
+        if truth_coords is not None:
+            ax1_img_inset.plot(
+                truth_coords.ra.deg,
+                truth_coords.dec.deg,
+                "or",
+                markersize=5,
+                mew=1,
+                mfc="none",
+                label="Truth",
+            )
+
+        if show_bestfit_loc:
+            ax1_img_inset.errorbar(
+                best_ra,
+                best_dec,
+                yerr=sym_err,
+                xerr=sym_err,
+                marker="none",
+                color="k",
+                markersize=1,
+                mew=1,
+                label="Best fit localisation",
+            )
+            ax1.set_title(
+                f"Best-fit localisation = ({best_ra:g}, {best_dec:g}) $\pm$ {sym_err:g} deg (sys)",
+            )
+
+        ins_h, ins_l = ax1_img_inset.get_legend_handles_labels()
+        ax1.legend(
+            handles=ctr_h + bpt_h + ins_h, labels=ctr_l + bpt_l + ins_l, fontsize=10
+        )
+
+    elif locfig_lims is not None:
+        ax1.set_xlim(locfig_lims[0], locfig_lims[1])
+        ax1.set_ylim(locfig_lims[2], locfig_lims[3])
+
+        # Truth Coordinates for comparison
+        if truth_coords is not None:
+            ax1.plot(
+                truth_coords.ra.deg,
+                truth_coords.dec.deg,
+                "or",
+                markersize=5,
+                mew=1,
+                mfc="none",
+                label="Truth",
+            )
+
+        if show_bestfit_loc:
+            ax1.errorbar(
+                best_ra,
+                best_dec,
+                yerr=sym_err,
+                xerr=sym_err,
+                marker="none",
+                color="k",
+                markersize=1,
+                mew=1,
+                label="Best fit localisation",
+            )
+        ax1.legend(handles=ctr_h + bpt_h, labels=ctr_l + bpt_l, fontsize=10)
+    else:
+        # do nothing
+        pass
+
     ax1.set_xlabel("Right Ascension (deg)", fontsize=14, ha="center")
     ax1.set_ylabel("Declination (deg)", fontsize=14, ha="center")
     ax1.minorticks_on()
@@ -426,24 +489,24 @@ def chi2_plot(
     # ax1.tick_params(axis="both", which="minor", length=4.5)
     ax1.tick_params(axis="both", which="both", direction="out", right=True, top=True)
 
-    cbar = fig.colorbar(
-        ax1_img,
-        ax=fig.axes,
-        # shrink=0.73,
-        orientation="vertical",
-        location="right",
-        # aspect=30,
-        pad=0.01,
-        extend="min",
-    )
-    cbar.add_lines(ax1_ctr)
+    # cbar = fig.colorbar(
+    #     ax1_img,
+    #     ax=fig.axes,
+    #     # shrink=0.73,
+    #     orientation="vertical",
+    #     location="right",
+    #     # aspect=30,
+    #     pad=0.01,
+    #     extend="min",
+    # )
+    # cbar.add_lines(ax1_ctr)
     # cbar.ax.set_title(r"$\chi^2$", fontsize=12, ha="center")
     # cbar.ax.set_title(r"$\ln \mathcal{L}$", fontsize=12, ha="center")
-    cbar.ax.set_title(r"$Pr$", fontsize=12, ha="center")
+    # cbar.ax.set_title(r"$Pr$", fontsize=12, ha="center")
     # cbar.ax.xaxis.set_ticks_position("top")
     # cbar.ax.tick_params(which="major", direction="in", length=9, bottom=True, top=True)
     # cbar.ax.tick_params(which="minor", direction="in", length=5, bottom=True, top=True)
-    cbar.ax.yaxis.set_tick_params(labelsize=11)
+    # cbar.ax.yaxis.set_tick_params(labelsize=11)
     return fig
 
 
@@ -472,5 +535,9 @@ def seekat(
         truth_coords=truth_coords,
         window="tab",
         show_bestfit_loc=True,
+        locfig_lims="zoom",
+        # locfig_lims=[14, 14.6, -51.5, -50.8],
+        # locfig_lims=[72.9, 73.1, -34.4, -34.2],
+        # locfig_lims=[20.5, 22.5, -59.5, -58.3],
     )
     return localization_fig, cov_fig
