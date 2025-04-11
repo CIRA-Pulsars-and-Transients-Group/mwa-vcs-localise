@@ -11,7 +11,9 @@ from astropy.constants import c as sol
 from .utils import MWA_CENTRE_CABLE_LEN
 
 
-def extractWorkingTilePositions(metadata: MetafitsContext) -> np.ndarray:
+def extractWorkingTilePositions(
+    metadata: MetafitsContext,
+) -> tuple[np.ndarray, int, int]:
     """Extract tile position information required for beamforming and/or
     computing the array factor quantity from a metafits structure.
     Flagged tiles are automatically excluded from the result.
@@ -24,7 +26,9 @@ def extractWorkingTilePositions(metadata: MetafitsContext) -> np.ndarray:
              each item in the outer array is:
                 [east_m, north_m, height_m, electrical_length_m]
              for a single tile.
-    :rtype: np.ndarray
+             Also returns the number of unflagged tiles, and the
+             number of flagged tiles.
+    :rtype: tuple(np.ndarray, int, int)
     """
     # Gather the tile positions into a "vector" for each tile
     tile_positions = np.array(
@@ -45,9 +49,12 @@ def extractWorkingTilePositions(metadata: MetafitsContext) -> np.ndarray:
     # Gather the flagged tile information from the metafits information
     # and remove those tiles from the above vector
     tile_flags = np.array([rf.flagged for rf in metadata.rf_inputs if rf.pol == Pol.X])
-    tile_positions = np.delete(tile_positions, np.where(tile_flags == True), axis=0)
+    tile_positions = np.delete(tile_positions, np.where(tile_flags & True), axis=0)
 
-    return tile_positions
+    num_ok_tiles = (~tile_flags).sum()
+    num_bad_tiles = (tile_flags).sum()
+
+    return tile_positions, num_ok_tiles, num_bad_tiles
 
 
 def calcGeometricDelays(
