@@ -9,11 +9,13 @@ import matplotlib.ticker as mticker
 import cmasher as cm
 
 import numpy as np
-from scipy.spatial import ConvexHull
 from scipy.spatial.distance import cdist
 from astropy.coordinates import EarthLocation, SkyCoord
 import astropy.units as u
 from mwalib import MetafitsContext, Pol
+import arviz as az
+from arviz.plots.plot_utils import calculate_point_estimate
+
 
 # Plotting style/formats
 plt.rcParams.update(
@@ -49,17 +51,7 @@ def sky_area(ra, dec):
     return cap_area * u.sr
 
 
-def find_max_baseline(context: MetafitsContext) -> list:
-    """Use a Convex Hull method to calculate the maximum distance
-    between two tiles given their 3D coordinates.
-
-    :param context: A mwalib.MetafitsContext object that contains
-        tile-position information.
-    :type context: MetafitsContext
-    :return: The maximum distance, and corresponding pair of
-        coordinates.
-    :rtype: list, 3-elements
-    """
+def find_characteristic_baseline(context: MetafitsContext, hdi_prob: float = 0.75):
     tile_positions = np.array(
         [
             np.array([rf.east_m, rf.north_m, rf.height_m])
@@ -68,22 +60,16 @@ def find_max_baseline(context: MetafitsContext) -> list:
         ]
     )
     tile_flags = np.array([rf.flagged for rf in context.rf_inputs if rf.pol == Pol.X])
-    tile_positions = np.delete(tile_positions, np.where(tile_flags == True), axis=0)
+    tile_positions = np.delete(tile_positions, np.where(tile_flags & True), axis=0)
 
-    # Create the convex hull
-    hull = ConvexHull(tile_positions)
+    dist = cdist(tile_positions, tile_positions)
+    dist = np.delete(dist, np.where(dist <= 0.01))  # remove autos
 
-    # Extract the points forming the hull
-    hullpoints = tile_positions[hull.vertices, :]
+    # use a KDE approach to estimate the mode of the baseline distribution
+    dist_mode = calculate_point_estimate("mode", dist)
+    dist_hdi = az.hdi(dist, hdi_prob=hdi_prob, multimodal=True)
 
-    # Naive way of finding the best pair in O(H^2) time if H is number
-    # of points on the hull
-    hdist = cdist(hullpoints, hullpoints, metric="euclidean")
-
-    # Get the farthest apart points
-    bestpair = np.unravel_index(hdist.argmax(), hdist.shape)
-
-    return [hdist.max(), hullpoints[bestpair[0]], hullpoints[bestpair[1]]]
+    return dist_mode, dist_hdi, max(dist), dist
 
 
 def plot_array_layout(
@@ -99,12 +85,16 @@ def plot_array_layout(
         ]
     )
     tile_flags = np.array([rf.flagged for rf in context.rf_inputs if rf.pol == Pol.X])
-    max_baseline = find_max_baseline(context)[0]
+
+    eff_b, _, max_b, _ = find_characteristic_baseline(context)
 
     okay_tiles_n = np.ma.masked_array(tile_positions[:, 1], mask=tile_flags)
     okay_tiles_e = np.ma.masked_array(tile_positions[:, 0], mask=tile_flags)
     bad_tiles_n = np.ma.masked_array(tile_positions[:, 1], mask=~tile_flags)
     bad_tiles_e = np.ma.masked_array(tile_positions[:, 0], mask=~tile_flags)
+
+    num_ok_tiles = (~tile_flags).sum()
+    num_bad_tiles = (tile_flags).sum()
 
     fig = plt.figure(figsize=(8, 6))
     fig.add_subplot()
@@ -115,6 +105,7 @@ def plot_array_layout(
         s=10,
         marker="x",
         color="k",
+        label=f"'Good' tiles ({num_ok_tiles})",
     )
     plt.scatter(
         bad_tiles_e,
@@ -123,20 +114,63 @@ def plot_array_layout(
         s=10,
         marker="x",
         color="r",
+        label=f"Flagged tiles ({num_bad_tiles})",
     )
     plt.xlim(ew_limits)
     plt.ylim(ns_limits)
+    plt.legend(fontsize=10)
     plt.xlabel("East coordinate from array centre (m)", fontsize=14)
     plt.ylabel("North coordiante from array centre (m)", fontsize=14)
     plt.title(
-        f"{context.sched_start_utc}\n"
-        + rf"Max. baseline $\approx$ {max_baseline:.0f} m"
+        f"Observation ID: {context.obs_id}  ({context.sched_start_utc})\n"
+        + rf"Max. baseline $\approx$ {max_b:.0f} m  "
+        + rf"Characteristic baseline $\approx$ {eff_b:.0f} m"
     )
     plt.minorticks_on()
     plt.tick_params(labelsize=12)
     plt.grid()
     plt.grid(which="minor", ls=":")
     plt.savefig(f"{context.obs_id}_array_layout.png", dpi=200, bbox_inches="tight")
+    plt.close(fig)
+
+
+def plot_baseline_distribution(context: MetafitsContext) -> None:
+    b_eff, hdi, b_max, b = find_characteristic_baseline(context)
+
+    tile_flags = np.array([rf.flagged for rf in context.rf_inputs if rf.pol == Pol.X])
+    num_ok_tiles = (~tile_flags).sum()
+    num_bad_tiles = (tile_flags).sum()
+
+    fig = plt.figure(figsize=(8, 6))
+    ax = fig.add_subplot()
+    ax.hist(b, bins="auto")
+    ymax = max(ax.get_ylim())
+    for i in hdi:
+        ax.fill_between(i, 0, ymax, color="0.8", alpha=0.5)
+    ax.axvline(b_eff, ls=":", color="k")
+    ax.text(
+        x=0.95,
+        y=0.95,
+        s=f"Number of baselines = {len(b)}\n"
+        + f"Number of 'good' tiles = {num_ok_tiles}\n"
+        + f"Number of flagged tiles = {num_bad_tiles}",
+        transform=ax.transAxes,
+        va="top",
+        ha="right",
+        fontsize=10,
+    )
+    plt.xlim(0, None)
+    plt.ylim(None, ymax)
+    plt.xlabel("Baseline length (m)", fontsize=14)
+    plt.ylabel("Frequency of baseline length", fontsize=14)
+    plt.title(
+        f"Observation ID: {context.obs_id}  ({context.sched_start_utc})\n"
+        + rf"Max. baseline $\approx$ {b_max:.0f} m  "
+        + rf"Characteristic baseline $\approx$ {b_eff:.0f} m"
+    )
+    plt.minorticks_on()
+    plt.tick_params(labelsize=12)
+    plt.savefig(f"{context.obs_id}_baseline_dist.png", dpi=200, bbox_inches="tight")
     plt.close(fig)
 
 
@@ -259,54 +293,6 @@ def plot_tied_array_beam(
     cbar.ax.tick_params(labelsize=11)
 
     oname_base = f"{context.obs_id}_tiedarray_beam"
-    if oname_suffix:
-        oname_base += oname_suffix
-
-    plt.savefig(f"{oname_base}.png", dpi=200, bbox_inches="tight")
-
-
-def plot_tied_array_beam_1look_2freq(
-    context: MetafitsContext,
-    tab: np.ndarray,
-    gra: np.ndarray,
-    gdec: np.ndarray,
-    freqs: list,
-    label: str = None,
-    oname_suffix: str = None,
-) -> None:
-
-    map_extent = [
-        gra.min(),
-        gra.max(),
-        gdec.min(),
-        gdec.max(),
-    ]
-
-    fig = plt.figure(figsize=(6, 6))
-    ax = fig.add_subplot()
-    lines = []
-    labels = []
-    for i, (tabf, col) in enumerate(zip(tab, ["red", "blue"])):
-        tab_ctr = ax.contour(
-            gra,
-            gdec,
-            tabf,
-            levels=[0.1, 0.5],
-            colors=col,
-            linestyles=["solid", "dotted"],
-            norm="log",
-        )
-        lines.append(tab_ctr.legend_elements()[0][0])
-        labels.append(f"{freqs[i]/1e6:.2f} MHz")
-    ax.set_xlabel("Right Ascension (deg)", fontsize=14)
-    ax.set_ylabel("Declination (deg)", fontsize=14)
-    ax.tick_params(labelsize=12)
-    ax.legend(lines, labels)
-
-    ax.set_ylim(-58, -52)
-    ax.set_xlim(42, 48)
-
-    oname_base = f"{context.obs_id}_tiedarray_beam_2freq"
     if oname_suffix:
         oname_base += oname_suffix
 
