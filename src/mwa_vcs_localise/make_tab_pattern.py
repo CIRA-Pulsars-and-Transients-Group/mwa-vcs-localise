@@ -14,11 +14,11 @@ import astropy.units as u
 from .utils import (
     MWA_LOCATION,
     sky_area,
-    find_max_baseline,
+    find_characteristic_baseline,
     plot_array_layout,
+    plot_baseline_distribution,
     plot_primary_beam,
     plot_tied_array_beam,
-    plot_tied_array_beam_1look_2freq,
 )
 from .array_factor import (
     extractWorkingTilePositions,
@@ -72,7 +72,7 @@ def main():
         help="""Coordinates (RA/Dec) defining the box to sample. 
         Format is a single string as follows: 'RA0 Dec0 RA1 Dec1 RAstep Decstep' in h:m:s d:m:s,
         where (RA0, Dec0) is one corner and (RA1, Dec1) is the opposite corner, and '*step' 
-        is the grid pixel size in arcseconds.""",
+        is the grid pixel size in arcsec.""",
         default=None,
     )
     parser.add_argument(
@@ -102,6 +102,13 @@ def main():
         help="Known true position of the target source (format: 'hh:mm:ss_dd:mm:ss').",
         default=None,
     )
+    parser.add_argument(
+        "--regularise",
+        type=str,
+        help="Type of regularisation function to use.",
+        choices=["none", "tab", "gaussian"],
+        default="tab",
+    )
 
     args = parser.parse_args()
     if len(args.freq) > 10:
@@ -112,21 +119,48 @@ def main():
         grid_box = args.gridbox.split(" ")[:-2]
         grid_step = args.gridbox.split(" ")[-2:]
 
+    if args.regularise == "none":
+        regularisation_fn = None
+    else:
+        regularisation_fn = args.regularise
+    print(f"Regularisation function requested: {regularisation_fn}")
+
     tt0 = timer.time()
     print("Preparing metadata...")
     # Collect meta information and setup configuration.
     context = mwalib.MetafitsContext(args.metafits)
-    max_baseline, _, _ = find_max_baseline(context)
-    tile_positions = extractWorkingTilePositions(context)
-    width = ((sol.value / freqs) / max_baseline) * u.rad
-    print(f"... maximum baseline (m): {max_baseline}")
-    print(f"... beam width ~ lambda/D (arcmin): {width.to(u.arcminute).value}")
+
+    # Examine the array layout, collect tile positions and baseline information
+    density_interval_prob = 0.75
+    eff_max_baseline, b_intervals, max_baseline, baselines = (
+        find_characteristic_baseline(
+            context,
+            hdi_prob=density_interval_prob,
+        )
+    )
+    tile_positions, num_good, num_flagged = extractWorkingTilePositions(context)
+    num_tiles = num_good + num_flagged
+    print(f"... number of tiles: {num_tiles}")
+    print(f"... number of unflagged tiles: {num_good}")
+    print(f"... number of baselines: {len(baselines)}")
+    print(f"... maximum baseline, D_max (m): {max_baseline}")
+    print(f"... characteristic baseline (mode), D_eff (m): {eff_max_baseline}")
+    print(f"... {density_interval_prob*100}% of baselines are between:")
+    for hdi in b_intervals:
+        print(f"     {hdi}")
+    if b_intervals.size > 2:
+        print("     CAUTION: multi-modal distribution.")
+    width = ((sol.value / freqs) / eff_max_baseline) * u.rad
+    print(f"... beam width ~ lambda/D_eff (arcmin): {width.to(u.arcminute).value}")
+
+    # Define reference frame and time
     time = Time(args.time, format="isot", scale="utc")
     altaz_frame = AltAz(location=MWA_LOCATION, obstime=time)
 
     if args.plot:
         print("Plotting array layout...")
         plot_array_layout(context)
+        plot_baseline_distribution(context)
 
     # Create the astrometric quantity for the beamformed target direction
     print("Creating look-direction vector...")
@@ -190,9 +224,6 @@ def main():
         sky_area_sr = sky_area(box_ra, box_dec)
         print(f"... sky area = {sky_area_sr} = {sky_area_sr.to(u.deg**2)}")
 
-        # Dump the grid to disk - deprecated, to be removed
-        # np.savez("grid", grid_ra, grid_dec)
-
         target_positions = SkyCoord(
             grid_ra,
             grid_dec,
@@ -253,6 +284,7 @@ def main():
             target=look_positions[0],
         )
 
+    # Start the loops over look-directions and compute the TABs
     tabp_look = []
     afp_look = []
     for i, lp in enumerate(look_positions_altaz):
@@ -297,18 +329,8 @@ def main():
     tabp_look = np.array(tabp_look)
     afp_look = np.array(afp_look)
 
-    # tabp_look has shape: (nlook, nfreq, ndec, nra)
-    # print(f"mean = {tabp_look.mean(axis=(-1,-2))/sky_area_sr.value}")
-    # print(f"variance = {tabp_look.var(axis=(-1,-2))/sky_area_sr.value}")
-    # print(tabp_look[0][0].shape)
-    # spatial_covar = np.cov(tabp_look[0][0].ravel(), tabp_look[1][0].ravel())
-    # print(spatial_covar)
-
-    # Dump the tab map to disk - deprecated, to be removed
-    # np.save("tabp_look", tabp_look)
-
     if args.plot:
-        ctr_levels = [0.01, 0.05, 0.1, 0.25, 0.5, 0.8, 1]
+        ctr_levels = [0.05, 0.1, 0.25, 0.5, 0.8, 1]
         oname_suffix = ""
         if args.nopb:
             tab_cbar_label = "Array factor power"
@@ -330,22 +352,14 @@ def main():
             tab_cbar_label,
             oname_suffix,
         )
-        plot_tied_array_beam_1look_2freq(
-            context,
-            tabp_look[0],
-            grid_ra,
-            grid_dec,
-            freqs,
-            tab_cbar_label,
-            oname_suffix,
-        )
 
     tt1 = timer.time()
     print(f"Done!! (Took {tt1-tt0} seconds.)\n")
 
+    # Execute the localisation method using the TABs and detection data
     if args.seekat:
-        if args.detfile != None:
-            if args.truth != None:
+        if args.detfile is not None:
+            if args.truth is not None:
                 true_coords = SkyCoord(
                     args.truth,
                     frame="icrs",
@@ -359,6 +373,7 @@ def main():
                 grid_ra,
                 grid_dec,
                 truth_coords=true_coords,
+                window=regularisation_fn,
             )
             loc.savefig("localisation.png", dpi=200)
             cov.savefig("covariance.png", dpi=200)
