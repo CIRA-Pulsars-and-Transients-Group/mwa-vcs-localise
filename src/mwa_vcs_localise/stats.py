@@ -18,31 +18,8 @@ from astropy.table import Table
 # For visualization
 import matplotlib.pyplot as plt
 import matplotlib.colors as colors
+import matplotlib.ticker as mtick
 import cmasher as cm
-
-
-def __beam_reader(data_directory):
-    """
-    TO BE DEPRECATED - ONLY KEP FOR TESTING.
-    Function to read tabp and grid from files on disk
-    This function is to be deprecated as we integrate stats.py wit the rest of the package.
-    """
-    import os
-
-    tabp_file = os.path.join(data_directory, "tabp_look.npy")
-    grid_file = os.path.join(data_directory, "grid.npz")
-
-    tabp_look = np.load(tabp_file)
-    print("Selecing the first frequency and ignoring all other frequencies")
-    tabp_look = tabp_look[:, 0, :, :]
-    grid_ra = np.load(grid_file)["arr_0"]
-    grid_dec = np.load(grid_file)["arr_1"]
-    # product = np.sum(tabp_look.mean(axis=1), axis=0)
-    print("tabp dimensions:", tabp_look.shape)
-    # print('product dimensions:', product.shape)
-    print("RA/Dec grid dimensions:", grid_ra.shape, grid_dec.shape)
-
-    return tabp_look, grid_ra, grid_dec
 
 
 def snr_reader(path_to_file):
@@ -143,7 +120,7 @@ def covariance_estimation(obs_snr, obs_mask, obs_weights, nsim=10000, plot_cov=T
     if np.all(np.abs(covariance) < 1e-2):
         print("  Covariances are all < abs(1e-2)")
         print(covariance)
-    elif np.all(np.ans(covariance) > 0.15):
+    elif np.all(np.abs(covariance) > 0.15):
         print("  Covariances are all > abs(0.15)")
         print(covariance)
     if np.any(np.abs(covariance) > 0.5):
@@ -187,7 +164,7 @@ def covariance_estimation(obs_snr, obs_mask, obs_weights, nsim=10000, plot_cov=T
 def chi2_calc(tabp_look, obs_mask, obs_snr, obs_weights, cov):
     # The below operations essentially compute the least-squares
     # regressions on the 2D maps. Because the arrays are multi-dimensional
-    # there's a bit of fiddling to make sure multiplcations/summations
+    # there's a bit of fiddling to make sure multiplications/summations
     # happen across the correct dimensions.
     P_array = tabp_look[obs_mask, ...] / tabp_look[obs_snr.argmax(), ...]
     R_array = obs_weights[:, None, None] - P_array.squeeze()
@@ -200,23 +177,6 @@ def chi2_calc(tabp_look, obs_mask, obs_snr, obs_weights, cov):
     return chi2
 
 
-def estimate_errors_from_contours(ctr_set, contour_labels=None) -> float:
-    max_distance = 0
-    for ic, collection in enumerate(ctr_set.collections):
-        for ip, path in enumerate(collection.get_paths()):
-            # Get the vertices of the contour path
-            vertices = path.vertices
-            # Compute pairwise distances between vertices
-            distances = sp.distance.cdist(vertices, vertices)
-            # Get the maximum distance in this set of vertices
-            max_distance_in_path = np.max(distances)
-            # Update the overall maximum distance if needed
-            max_distance = max(max_distance, max_distance_in_path)
-
-    # return half the distance (as a symmetrical error)
-    return max_distance / 2
-
-
 def estimate_errors_from_islands(
     pmap: np.ndarray,
     grid_ra: np.ndarray,
@@ -226,7 +186,7 @@ def estimate_errors_from_islands(
     clvl: float,
 ) -> tuple[float, tuple[float, float] | None, int]:
     """Calculate the symmetrical conservative error based on the probability islands
-    and their extent relative to the peak localisation
+    and their extent relative to the peak localisation.
 
     :param pmap: The localisation probability map.
     :type pmap: np.ndarray
@@ -282,7 +242,7 @@ def get2Dcdf(s: float) -> float:
     return 1 - np.exp(-0.5 * s**2)
 
 
-def mahal_error(prob: np.ndarray, sigma: float = 1) -> tuple[float | None, list | None]:
+def mahal_error(prob: np.ndarray, sigma: float = 1) -> float | None:
     """Calculate the Mahalanobis radius to provide an error on the localisation,
     under the assumption that the underlying probability density is ~Gaussian.
 
@@ -318,6 +278,7 @@ def chi2_plot(
     grid_ra,
     grid_dec,
     obs_beam_centers,
+    obs_beam_snrs,
     obs_mask,
     contour_levels=None,
     truth_coords=None,
@@ -330,9 +291,10 @@ def chi2_plot(
     aspect = "auto"
     origin = "lower"
     cmap = cm.sapphire_r
-    ctr_cmap = cm.get_sub_cmap(cm.ember, 0.4, 0.9)
+    ctr_ls = [":", "--", "-"]  # outer to inner, in order
+    ctr_colors = ["k", "k", "yellow"]
 
-    if window == "gaus":
+    if window == "gaus" or window == "gaussian":
         scale = 3
         print(
             f"Placing Gaussian window at central TAB position, with variance ~ {scale} * max. TAB separation."
@@ -367,19 +329,26 @@ def chi2_plot(
         grid_ra[best_ra_index, best_dec_index],
         grid_dec[best_ra_index, best_dec_index],
     )
+    best_coord = SkyCoord(best_ra, best_dec, unit="deg")
+    best_coord_hms = best_coord.to_string("hmsdms", sep=":", precision=2)
+    best_coord_deg = best_coord.to_string("decimal", precision=6)
 
     # Compute the contour levels via the Mahalanobis radius at various
     # equivalent "sigma" levels, under the assumption of a Gaussian distribution
-    sigma_levels = [3, 2, 1]
+    sigma_levels = [5, 3, 1]
     print(f"Significance intervals set at: {sigma_levels}-sigma")
     contour_levels = np.array([mahal_error(prob, s) for s in sigma_levels])
-
     sym_err, _, nislands = estimate_errors_from_islands(
         prob, grid_ra, grid_dec, best_ra_index, best_dec_index, contour_levels.min()
     )
 
-    print(f"best R.A. = {best_ra:g} deg, best Dec. = {best_dec:g} deg")
-    print(f"sym. pos. err. = {sym_err*60:g} arcmin")
+    print(f"best position estimate = {best_coord_hms}")
+    print(f"                       = {best_coord_deg} deg")
+    for isig, sig in enumerate(sigma_levels):
+        sig_err, _, nislands = estimate_errors_from_islands(
+            prob, grid_ra, grid_dec, best_ra_index, best_dec_index, contour_levels[isig]
+        )
+        print(f"  {sig}-sigma sym. pos. err. = {sig_err*60:g} arcmin")
 
     fig = plt.figure(figsize=(8, 6), constrained_layout=True)
     ax1 = fig.add_subplot(1, 1, 1)
@@ -399,9 +368,10 @@ def chi2_plot(
     ax1_ctr = ax1.contour(
         prob,
         levels=contour_levels,
+        linestyles=ctr_ls,
+        colors=ctr_colors,
         extent=map_extent,
         origin=origin,
-        cmap=ctr_cmap,
     )
 
     # Beams
@@ -421,17 +391,20 @@ def chi2_plot(
         ms=5,
         label="Beam centre with max. S/N",
     )
-
-    # Collect and fix legend handles and labels
-    ctr_h = ax1_ctr.legend_elements()[0]
-    ctr_l = [f"${s}\sigma$" for s in sigma_levels]
-    bpt_h, bpt_l = ax1.get_legend_handles_labels()
-    ax1.legend(handles=ctr_h + bpt_h, labels=ctr_l + bpt_l, fontsize=10)
+    for j, sobs in enumerate(obs_beam_snrs):
+        ax1.annotate(
+            f"{sobs:g}",
+            xy=(obs_beam_centers.ra.deg[j], obs_beam_centers.dec.deg[j]),
+            ha="right",
+            va="bottom",
+            textcoords="offset points",
+            xytext=(-4, 0),
+        )
 
     # If set, now zoom on specified region
     if locfig_lims == "zoom":
         # add a zoomed version of the localisation island
-        excess = 3 * sym_err
+        excess = 2 * sym_err
         x1, x2 = best_ra - excess, best_ra + excess
         y1, y2 = best_dec - excess, best_dec + excess
         ax1_img_inset = ax1.inset_axes(
@@ -451,10 +424,12 @@ def chi2_plot(
         ax1_img_inset.contour(
             prob,
             levels=contour_levels,
+            linestyles=ctr_ls,
+            colors=ctr_colors,
             extent=map_extent,
             origin=origin,
-            cmap=ctr_cmap,
         )
+        ax1_img_inset.tick_params(axis="both", labelrotation=45, pad=-2)
         ax1.indicate_inset_zoom(ax1_img_inset, edgecolor="black")
         pad = (
             np.array(
@@ -477,6 +452,10 @@ def chi2_plot(
             min(obs_beam_centers.dec.deg) - pad,
             max(obs_beam_centers.dec.deg) + pad,
         )
+
+        ax1_img_inset.xaxis.set_major_locator(mtick.MaxNLocator(5, prune="both"))
+        ax1_img_inset.yaxis.set_major_locator(mtick.MaxNLocator(5, prune="both"))
+        ax1_img_inset.grid()
 
         # Truth Coordinates for comparison
         if truth_coords is not None:
@@ -506,6 +485,10 @@ def chi2_plot(
                 f"Best-fit localisation = ({best_ra:g}, {best_dec:g}) $\pm$ {sym_err:g} deg (sys)",
             )
 
+        # Collect and fix legend handles and labels
+        ctr_h = ax1_ctr.legend_elements()[0]
+        ctr_l = [f"${s}\sigma$" for s in sigma_levels]
+        bpt_h, bpt_l = ax1.get_legend_handles_labels()
         ins_h, ins_l = ax1_img_inset.get_legend_handles_labels()
         ax1.legend(
             handles=ctr_h + bpt_h + ins_h, labels=ctr_l + bpt_l + ins_l, fontsize=10
@@ -539,37 +522,35 @@ def chi2_plot(
                 mew=1,
                 label="Best fit localisation",
             )
+        # Collect and fix legend handles and labels
+        ctr_h = ax1_ctr.legend_elements()[0]
+        ctr_l = [f"${s}\sigma$" for s in sigma_levels]
+        bpt_h, bpt_l = ax1.get_legend_handles_labels()
         ax1.legend(handles=ctr_h + bpt_h, labels=ctr_l + bpt_l, fontsize=10)
     else:
-        # do nothing
-        pass
+        # Truth Coordinates for comparison
+        if truth_coords is not None:
+            ax1.plot(
+                truth_coords.ra.deg,
+                truth_coords.dec.deg,
+                "or",
+                markersize=5,
+                mew=1,
+                mfc="none",
+                label="Truth",
+            )
+        # Collect and fix legend handles and labels
+        ctr_h = ax1_ctr.legend_elements()[0]
+        ctr_l = [f"${s}\sigma$" for s in sigma_levels]
+        bpt_h, bpt_l = ax1.get_legend_handles_labels()
+        ax1.legend(handles=ctr_h + bpt_h, labels=ctr_l + bpt_l, fontsize=10)
 
     ax1.set_xlabel("Right Ascension (deg)", fontsize=14, ha="center")
     ax1.set_ylabel("Declination (deg)", fontsize=14, ha="center")
     ax1.minorticks_on()
     ax1.tick_params(axis="both", which="major", labelsize=12)
-    # ax1.tick_params(axis="both", which="major", length=9)
-    # ax1.tick_params(axis="both", which="minor", length=4.5)
     ax1.tick_params(axis="both", which="both", direction="out", right=True, top=True)
 
-    # cbar = fig.colorbar(
-    #     ax1_img,
-    #     ax=fig.axes,
-    #     # shrink=0.73,
-    #     orientation="vertical",
-    #     location="right",
-    #     # aspect=30,
-    #     pad=0.01,
-    #     extend="min",
-    # )
-    # cbar.add_lines(ax1_ctr)
-    # cbar.ax.set_title(r"$\chi^2$", fontsize=12, ha="center")
-    # cbar.ax.set_title(r"$\ln \mathcal{L}$", fontsize=12, ha="center")
-    # cbar.ax.set_title(r"$Pr$", fontsize=12, ha="center")
-    # cbar.ax.xaxis.set_ticks_position("top")
-    # cbar.ax.tick_params(which="major", direction="in", length=9, bottom=True, top=True)
-    # cbar.ax.tick_params(which="minor", direction="in", length=5, bottom=True, top=True)
-    # cbar.ax.yaxis.set_tick_params(labelsize=11)
     return fig
 
 
@@ -581,6 +562,7 @@ def seekat(
     cov_nsim=10000,
     plot_cov=True,
     truth_coords=None,
+    window=None,
 ):
     obs_beam_centers, obs_snr, obs_weights, obs_mask = snr_reader(detfile)
     covariance, cov_fig = covariance_estimation(
@@ -593,14 +575,12 @@ def seekat(
         grid_ra,
         grid_dec,
         obs_beam_centers,
+        obs_snr,
         obs_mask,
         contour_levels=None,
         truth_coords=truth_coords,
-        window="tab",
+        window=window,
         show_bestfit_loc=True,
         locfig_lims="zoom",
-        # locfig_lims=[14, 14.6, -51.5, -50.8],
-        # locfig_lims=[72.9, 73.1, -34.4, -34.2],
-        # locfig_lims=[20.5, 22.5, -59.5, -58.3],
     )
     return localization_fig, cov_fig
