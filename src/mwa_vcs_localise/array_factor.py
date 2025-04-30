@@ -11,7 +11,7 @@ from astropy.constants import c as sol
 from .utils import MWA_CENTRE_CABLE_LEN
 
 
-def extractWorkingTilePositions(
+def extract_working_tile_positions(
     metadata: MetafitsContext,
 ) -> tuple[np.ndarray, int, int]:
     """Extract tile position information required for beamforming and/or
@@ -57,7 +57,7 @@ def extractWorkingTilePositions(
     return tile_positions, num_ok_tiles, num_bad_tiles
 
 
-def calcGeometricDelays(
+def calc_geometric_delays(
     positions: np.ndarray, freq_hz: float, alt: float, az: float
 ) -> np.ndarray:
     """Compute the geometric delay phases for each element position in order to
@@ -109,7 +109,7 @@ def calcGeometricDelays(
     return phasor
 
 
-def calcArrayFactorPower(look_w: np.ndarray, target_w: np.ndarray) -> np.ndarray:
+def calc_array_factor_power(look_w: np.ndarray, target_w: np.ndarray) -> np.ndarray:
     """Compute the array factor power from a given pointing phasor
     and one or more target directions.
 
