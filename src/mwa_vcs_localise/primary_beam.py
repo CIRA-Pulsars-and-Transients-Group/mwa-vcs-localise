@@ -10,7 +10,7 @@ from mwalib import MetafitsContext
 from mwa_hyperbeam import FEEBeam as PrimaryBeam
 
 
-def getPrimaryBeamPower(
+def get_primary_beam_power(
     metadata: MetafitsContext,
     freq_hz: float,
     alt: Union[float, np.ndarray],
