@@ -292,7 +292,7 @@ def chi2_plot(
     origin = "lower"
     cmap = cm.sapphire_r
     ctr_ls = [":", "--", "-"]  # outer to inner, in order
-    ctr_colors = ["k", "k", "yellow"]
+    ctr_colors = ["k", "k", "magenta"]
 
     if window == "gaus" or window == "gaussian":
         scale = 3
@@ -457,18 +457,7 @@ def chi2_plot(
         ax1_img_inset.yaxis.set_major_locator(mtick.MaxNLocator(5, prune="both"))
         ax1_img_inset.grid()
 
-        # Truth Coordinates for comparison
-        if truth_coords is not None:
-            ax1_img_inset.plot(
-                truth_coords.ra.deg,
-                truth_coords.dec.deg,
-                "or",
-                markersize=5,
-                mew=1,
-                mfc="none",
-                label="Truth",
-            )
-
+        # Best-fit coordinate crosshair
         if show_bestfit_loc:
             ax1_img_inset.errorbar(
                 best_ra,
@@ -482,7 +471,19 @@ def chi2_plot(
                 label="Best fit localisation",
             )
             ax1.set_title(
-                f"Best-fit localisation = ({best_ra:g}, {best_dec:g}) $\pm$ {sym_err:g} deg (sys)",
+                f"Best-fit localisation = ({best_ra:g}, {best_dec:g}) $\pm$ {sym_err:g} deg",
+            )
+
+        # Truth Coordinates for comparison
+        if truth_coords is not None:
+            ax1_img_inset.plot(
+                truth_coords.ra.deg,
+                truth_coords.dec.deg,
+                "or",
+                markersize=5,
+                mew=1,
+                mfc="none",
+                label="Truth",
             )
 
         # Collect and fix legend handles and labels
@@ -491,12 +492,30 @@ def chi2_plot(
         bpt_h, bpt_l = ax1.get_legend_handles_labels()
         ins_h, ins_l = ax1_img_inset.get_legend_handles_labels()
         ax1.legend(
-            handles=ctr_h + bpt_h + ins_h, labels=ctr_l + bpt_l + ins_l, fontsize=10
+            handles=ctr_h + bpt_h + ins_h,
+            labels=ctr_l + bpt_l + ins_l,
+            fontsize=12,
+            ncols=2,
+            loc="lower right",
         )
 
     elif locfig_lims is not None:
         ax1.set_xlim(locfig_lims[0], locfig_lims[1])
         ax1.set_ylim(locfig_lims[2], locfig_lims[3])
+
+        # Best-fit coordinate crosshair
+        if show_bestfit_loc:
+            ax1.errorbar(
+                best_ra,
+                best_dec,
+                yerr=sym_err,
+                xerr=sym_err,
+                marker="none",
+                color="k",
+                markersize=1,
+                mew=1,
+                label="Best fit localisation",
+            )
 
         # Truth Coordinates for comparison
         if truth_coords is not None:
@@ -510,23 +529,15 @@ def chi2_plot(
                 label="Truth",
             )
 
-        if show_bestfit_loc:
-            ax1.errorbar(
-                best_ra,
-                best_dec,
-                yerr=sym_err,
-                xerr=sym_err,
-                marker="none",
-                color="k",
-                markersize=1,
-                mew=1,
-                label="Best fit localisation",
-            )
         # Collect and fix legend handles and labels
         ctr_h = ax1_ctr.legend_elements()[0]
         ctr_l = [f"${s}\sigma$" for s in sigma_levels]
         bpt_h, bpt_l = ax1.get_legend_handles_labels()
-        ax1.legend(handles=ctr_h + bpt_h, labels=ctr_l + bpt_l, fontsize=10)
+        ax1.legend(
+            handles=ctr_h + bpt_h,
+            labels=ctr_l + bpt_l,
+            fontsize=12,
+        )
     else:
         # Truth Coordinates for comparison
         if truth_coords is not None:
@@ -543,7 +554,11 @@ def chi2_plot(
         ctr_h = ax1_ctr.legend_elements()[0]
         ctr_l = [f"${s}\sigma$" for s in sigma_levels]
         bpt_h, bpt_l = ax1.get_legend_handles_labels()
-        ax1.legend(handles=ctr_h + bpt_h, labels=ctr_l + bpt_l, fontsize=10)
+        ax1.legend(
+            handles=ctr_h + bpt_h,
+            labels=ctr_l + bpt_l,
+            fontsize=12,
+        )
 
     ax1.set_xlabel("Right Ascension (deg)", fontsize=14, ha="center")
     ax1.set_ylabel("Declination (deg)", fontsize=14, ha="center")
@@ -580,7 +595,9 @@ def seekat(
         contour_levels=None,
         truth_coords=truth_coords,
         window=window,
-        show_bestfit_loc=True,
-        locfig_lims="zoom",
+        # show_bestfit_loc=True,
+        show_bestfit_loc=False,
+        # locfig_lims="zoom",
+        locfig_lims=[5, 7, -20.5, -18.5],
     )
     return localization_fig, cov_fig
