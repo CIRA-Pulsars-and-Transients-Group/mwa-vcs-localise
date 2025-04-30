@@ -595,9 +595,7 @@ def seekat(
         contour_levels=None,
         truth_coords=truth_coords,
         window=window,
-        # show_bestfit_loc=True,
-        show_bestfit_loc=False,
-        # locfig_lims="zoom",
-        locfig_lims=[5, 7, -20.5, -18.5],
+        show_bestfit_loc=True,
+        locfig_lims="zoom",
     )
     return localization_fig, cov_fig
