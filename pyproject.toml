@@ -1,5 +1,5 @@
 [build-system]
-requires = ["setuptools >= 61.0", "wheel", "oldest-supported-numpy"]
+requires = ["setuptools >= 64.0", "setuptools-git-versioning", "wheel", "oldest-supported-numpy"]
 build-backend = "setuptools.build_meta"
 
 [tool.setuptools-git-versioning] # use Git info to version
@@ -11,7 +11,10 @@ dynamic = ["version"]
 readme = "README.md"
 description = "A package to help localise objects through tied-array beam tiling with the MWA."
 license = { file = "LICENSE" }
-authors = [{ name = "Bradley Meyers", email = "bradley.meyers1993@gmail.com" }]
+authors = [
+  { name = "Bradley Meyers", email = "bradley.meyers1993@gmail.com" },
+  { name = "Arash Bahramian", email = "arash.bahramian@curtin.edu.au" },
+]
 classifiers = [
   "Programming Language :: Python :: 3",
   "License :: OSI Approved :: Academic Free License (AFL)",
@@ -20,10 +23,10 @@ classifiers = [
 ]
 requires-python = ">=3.9"
 dependencies = [
-  "astropy ~=5.0",
-  "matplotlib ~=3.8",
+  "astropy",
+  "matplotlib",
   "cmasher",
-  "scipy ~=1.11",
+  "scipy",
   "mwalib",
   "mwa_hyperbeam",
 ]
