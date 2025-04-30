@@ -21,11 +21,11 @@ from .utils import (
     plot_tied_array_beam,
 )
 from .array_factor import (
-    extractWorkingTilePositions,
-    calcGeometricDelays,
-    calcArrayFactorPower,
+    extract_working_tile_positions,
+    calc_geometric_delays,
+    calc_array_factor_power,
 )
-from .primary_beam import getPrimaryBeamPower
+from .primary_beam import get_primary_beam_power
 from .stats import seekat, snr_reader
 
 
@@ -138,7 +138,7 @@ def main():
             hdi_prob=density_interval_prob,
         )
     )
-    tile_positions, num_good, num_flagged = extractWorkingTilePositions(context)
+    tile_positions, num_good, num_flagged = extract_working_tile_positions(context)
     num_tiles = num_good + num_flagged
     print(f"... number of tiles: {num_tiles}")
     print(f"... number of unflagged tiles: {num_good}")
@@ -260,7 +260,7 @@ def main():
             # Compute the primary beam zenith-normalised power.
             print(f"Computing primary beam power at frequency = {freq} Hz...")
             t0 = timer.time()
-            pbp = getPrimaryBeamPower(
+            pbp = get_primary_beam_power(
                 context,
                 freq,
                 target_positions_altaz.alt.rad,
@@ -300,19 +300,19 @@ def main():
             print("Computing array factors...")
             t0 = timer.time()
             # Compute the array factor (tied-array beam weighting factor).
-            look_psi = calcGeometricDelays(
+            look_psi = calc_geometric_delays(
                 tile_positions,
                 freq,
                 lp.alt.rad,
                 lp.az.rad,
             )
-            target_psi = calcGeometricDelays(
+            target_psi = calc_geometric_delays(
                 tile_positions,
                 freq,
                 target_positions_altaz.alt.rad,
                 target_positions_altaz.az.rad,
             )
-            afp = calcArrayFactorPower(look_psi, target_psi)
+            afp = calc_array_factor_power(look_psi, target_psi)
             t1 = timer.time()
             print(f"... took {t1-t0} seconds")
 
