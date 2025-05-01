@@ -169,28 +169,26 @@ def estimate_errors_from_islands(
     clvl: float,
 ) -> tuple[float, tuple[float, float] | None, int]:
     """Calculate the symmetrical conservative error based on the probability islands
-    and their extent relative to the peak localisation.
+    and their extent relative to the peak localisation position.
 
-    :param pmap: The localisation probability map.
-    :type pmap: np.ndarray
-    :param grid_ra: The 2-D mesh grid in R.A. that defines the probability map coordinate.
-    :type grid_ra: np.ndarray
-    :param grid_dec: The 2-D mesh grid in Dec. that defines the probability map coordinate.
-    :type grid_dec: np.ndarray
-    :param ra_idx: The R.A. grid index corresponding to the peak probability.
-    :type ra_idx: int
-    :param dec_idx: The Dec. grid index corresponding to the peak probability.
-    :type dec_idx: int
-    :param clvl: A contour level (in the same units as the probability map) that defines the uncertainty region.
-    :type clvl: float
+    Args:
+        pmap (np.ndarray): The localisation probability map.
+        grid_ra (np.ndarray): The 2-D mesh grid in R.A. that defines the probability map coordinate.
+        grid_dec (np.ndarray): The 2-D mesh grid in Dec. that defines the probability map coordinate.
+        ra_idx (int): The R.A. grid index corresponding to the peak probability.
+        dec_idx (int): The Dec. grid index corresponding to the peak probability.
+        clvl (float): A contour level (in the same units as the probability map) that defines the
+            uncertainty region.
 
-    :return (max_dist, max_dist_pt, num_islands): A tuple containing -
-                The maximum distance from the peak localisation pixel to the provided contour level (i.e., the symmetric uncertainty),
-                The pixel coordinates corresponding to the maximum distance, and
-                The number of probability islands found in the image (typically 1)
-    rtype: tuple[float, tuple[float, float] | None, int]
+    Returns:
+        tuple[float, tuple[float, float] | None, int]: A tuple containing -
+            (1) The maximum distance from the peak localisation pixel to the provided
+                contour level (i.e., the symmetric uncertainty),
+            (2) The pixel coordinates corresponding to the maximum distance, and
+            (3) The number of probability islands found in the image (typically 1).
     """
-    # Using those contour levels, estimate the maximum distance from the peak to
+
+    # Using the provided contour level, estimate the maximum distance from the peak to
     # the corresponding contour and take this as the uncertainty. We collect the
     # islands of probability into labelled groups and only use the island which
     # contains the peak probability to calculate the uncertainties.
@@ -214,13 +212,13 @@ def estimate_errors_from_islands(
 
 
 def get2Dcdf(s: float) -> float:
-    """Compute the Gaussian CDF value for a give sigma value
+    """Compute the Gaussian CDF value for a give sigma value.
 
-    :param s: The desired "sigma" quantity used to evaluate the CDF value.
-    :type s: float
+    Args:
+        s (float): The desired "sigma" quantity used to evaluate the CDF value.
 
-    :return cdf: The Gaussian CDF value corresponding to the input "sigma" level.
-    :rtype: float
+    Returns:
+        float: The Gaussian CDF value corresponding to the input "sigma" level.
     """
     return 1 - np.exp(-0.5 * s**2)
 
@@ -229,14 +227,15 @@ def mahal_error(prob: np.ndarray, sigma: float = 1) -> float | None:
     """Calculate the Mahalanobis radius to provide an error on the localisation,
     under the assumption that the underlying probability density is ~Gaussian.
 
-    :param prob: The 2D probability density map.
-    :type prob: np.ndarray
-    :param sigma:  The equivalent Gaussian sigma desired to measure. Defaults to 1.
-    :type sigma: float
-    :return prob_sigma_level: The probability density value associated with the input sigma level.
-    If a sensible value cannot be found, the function return None.
-    :rtype: float | None
+    Args:
+        prob (np.ndarray): The 2D probability density map.
+        sigma (float, optional): The equivalent Gaussian sigma desired to measure. Defaults to 1.
+
+    Returns:
+        float | None: The probability density value associated with the input sigma level.
+            If a sensible value cannot be found, the function return None.
     """
+
     prob_flat_sorted = np.sort(prob, axis=None)
     prob_flat_sorted_index = np.argsort(prob, axis=None)
     prob_flat_sorted_cumsum = np.cumsum(prob.flatten()[prob_flat_sorted_index])
