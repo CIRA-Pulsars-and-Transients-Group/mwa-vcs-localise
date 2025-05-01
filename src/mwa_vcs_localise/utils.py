@@ -36,7 +36,17 @@ MWA_LOCATION = EarthLocation.from_geodetic(
 )
 
 
-def sky_area(ra, dec):
+def sky_area(ra: np.ndarray, dec: np.ndarray) -> u.quantity:
+    """Estimate the sky area given a list of RA and Dec. coordinates that
+    inscribe some ~rectangle on the sky.
+
+    Args:
+        ra (np.ndarray): The array of RA coordinates describing the E-W extent of the box.
+        dec (np.ndarray): The array of Dec. coordinates describing the N-S extent of the box.
+
+    Returns:
+        u.quantity: An estimated sky area, in steradians.
+    """
 
     ra_rad = np.deg2rad(ra)
     dec_rad = np.deg2rad(dec)
@@ -52,7 +62,25 @@ def sky_area(ra, dec):
     return cap_area * u.sr
 
 
-def find_characteristic_baseline(context: MetafitsContext, hdi_prob: float = 0.75):
+def find_characteristic_baseline(
+    context: MetafitsContext, hdi_prob: float = 0.75
+) -> tuple[float, np.ndarray, float, np.ndarray]:
+    """From the observation metadata, compute the tile effective and
+    maximum baselines, as well as the baseline distribution.
+
+    Args:
+        context (MetafitsContext): A mwalib.MetafitsContext object that contains the
+            array configuration and delay settings.
+        hdi_prob (float, optional): Fraction of baselines to be included for the
+            highest-density interval. Defaults to 0.75.
+
+    Returns:
+        tuple[float, np.ndarray, float, np.ndarray]: A tuple containing:
+            (1) The effective (modal) baseline,
+            (2) The highest-density interval (there may be more than one interval),
+            (3) The maximum baseline, and
+            (4) The baseline distribution.
+    """
     tile_positions = np.array(
         [
             np.array([rf.east_m, rf.north_m, rf.height_m])
@@ -78,6 +106,16 @@ def plot_array_layout(
     ew_limits: list = [-410, 410],
     ns_limits: list = [50, 600],
 ) -> None:
+    """Plot the tile position layout.
+
+    Args:
+        context (MetafitsContext): A mwalib.MetafitsContext object that contains the
+            array configuration and delay settings.
+        ew_limits (list, optional): The E-W limits, relative to the array centre
+            (in metres) to plot. Defaults to [-410, 410].
+        ns_limits (list, optional): The N-S limits, relative to the array centre
+            (in metres) to plot. Defaults to [50, 600].
+    """
     tile_positions = np.array(
         [
             np.array([rf.east_m, rf.north_m, rf.height_m])
@@ -136,6 +174,12 @@ def plot_array_layout(
 
 
 def plot_baseline_distribution(context: MetafitsContext) -> None:
+    """Plot the baseline distribution and indicate the highest-density interval(s).
+
+    Args:
+        context (MetafitsContext): A mwalib.MetafitsContext object that contains the
+            array configuration and delay settings.
+    """
     b_eff, hdi, b_max, b = find_characteristic_baseline(context)
 
     tile_flags = np.array([rf.flagged for rf in context.rf_inputs if rf.pol == Pol.X])
@@ -181,8 +225,19 @@ def plot_primary_beam(
     gra: np.ndarray,
     gdec: np.ndarray,
     levels: list,
-    target: SkyCoord = None,
+    target: SkyCoord | None = None,
 ) -> None:
+    """Plot the primary beam response across the gridded sky area.
+
+    Args:
+        context (MetafitsContext): A mwalib.MetafitsContext object that contains the
+            array configuration and delay settings.
+        pb (np.ndarray): The 2D primary beam map.
+        gra (np.ndarray): The 2-D mesh grid in R.A. that defines the sky area of interest.
+        gdec (np.ndarray): The 2-D mesh grid in Dec. that defines the sky area of interest.
+        levels (list): Contour levels to plot, in units of primary beam power (0-1).
+        target (SkyCoord | None, optional): A target position to highlight, if desired. Defaults to None.
+    """
 
     map_extent = [
         gra.min(),
@@ -243,9 +298,22 @@ def plot_tied_array_beam(
     gra: np.ndarray,
     gdec: np.ndarray,
     levels: list,
-    label: str = None,
-    oname_suffix: str = None,
+    label: str | None = None,
+    oname_suffix: str | None = None,
 ) -> None:
+    """Plot the tied-array beam pattern response across the gridded sky area.
+
+    Args:
+        context (MetafitsContext): A mwalib.MetafitsContext object that contains the
+            array configuration and delay settings.
+        tab (np.ndarray): The 2D tied-array beam map.
+        gra (np.ndarray): The 2-D mesh grid in R.A. that defines the sky area of interest.
+        gdec (np.ndarray): The 2-D mesh grid in Dec. that defines the sky area of interest.
+        levels (list): Contour levels to plot, in units of tied-array beam power (0-1).
+        label (str | None, optional): Label to describe the colorbar. Defaults to None (i.e., no label).
+        oname_suffix (str | None, optional): A suffix to append to the end of the saved figure file.
+            Defaults to None (i.e., figure named f"{context.obsid}_tiedarray_beam.png").
+    """
 
     map_extent = [
         gra.min(),
