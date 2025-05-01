@@ -26,7 +26,7 @@ from .array_factor import (
     calc_array_factor_power,
 )
 from .primary_beam import get_primary_beam_power
-from .stats import seekat, snr_reader
+from .stats import localise, snr_reader
 
 
 def main():
@@ -367,7 +367,7 @@ def main():
                 )
             else:
                 true_coords = None
-            loc, cov = seekat(
+            loc, cov = localise(
                 args.detfile,
                 tabp_look,
                 grid_ra,
