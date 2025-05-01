@@ -4,114 +4,77 @@
 # Licensed under the Academic Free License version 3.0 #
 ########################################################
 
-# For basic algebra and stats
+# For basic algebra and statistics
 import numpy as np
 import scipy.stats as st
 import scipy.spatial as sp
 from scipy.ndimage import label
 
 # Astropy
-import astropy.units as u
 from astropy.coordinates import SkyCoord
 from astropy.table import Table
 
 # For visualization
+from matplotlib.figure import Figure
 import matplotlib.pyplot as plt
-import matplotlib.colors as colors
 import matplotlib.ticker as mtick
 import cmasher as cm
 
 
-def snr_reader(path_to_file):
-    """
-    Function to read SNR per "look". Input is path to file.
-    File should be a CSV, at least containing columns labeled as 'ra', 'dec', 'snr'.
-    Coordinate columns should be in hms for ra and dms for dec.
+def snr_reader(
+    path_to_file: str,
+) -> tuple[SkyCoord, np.ndarray, np.ndarray, np.ndarray]:
+    """Read in the input detection file with the TAB centre coordinates and
+    measured detection significance.
 
+    Input files is expected to be in CSV format with headers "ra,dec,snr" at least.
+    The coordinates should be in "hms" and "dms" format for "ra" and "dec", respectively.
+
+    Args:
+        path_to_file (str): path of the CSV text file
+
+    Returns:
+        tuple[SkyCoord, np.ndarray, np.ndarray, np.ndarray]:
+            Centre coordinates, detection metrics, relative TAB weights
+            and a mask that identifies the highest detection significance TAB.
     """
+
     obs_snr_table = Table.read(path_to_file, format="csv")
     obs_snr = obs_snr_table["snr"].value
     obs_beam_centers = SkyCoord(
         obs_snr_table["ra"],
         obs_snr_table["dec"],
         frame="icrs",
-        unit=(u.hourangle, u.deg),
+        unit=("hourangle", "deg"),
     )
     obs_mask = obs_snr < obs_snr.max()
     obs_weights = obs_snr[obs_mask] / obs_snr.max()
     return obs_beam_centers, obs_snr, obs_weights, obs_mask
 
 
-def beam_plot(beam_cen_coords, tabp, grid_ra, grid_dec, label, contours=True):
+def covariance_estimation(
+    obs_snr: np.ndarray,
+    obs_mask: np.ndarray,
+    obs_weights: np.ndarray,
+    nsim: int = 10000,
+    plot_cov: bool = True,
+) -> tuple[np.ndarray, Figure]:
+    """Estimate the covariance between each TAB pair. This is achieved via
+    simulation of the ratios of the pairs of TAB detection statistics. For
+    the most part, it only captures the covariance introduced by dividing
+    each TAB by a nominal "best detection".
+
+    Args:
+        obs_snr (np.ndarray): Observed detection metric (i.e., snr) for each TAB
+        obs_mask (np.ndarray): The mask which identifies which TABs are to be compared.
+        obs_weights (np.ndarray): The relative weights for each observed detection metric in a TAB.
+        nsim (int, optional): How many random multivariate draws to make per pair. Defaults to 10000.
+        plot_cov (bool, optional): Whether to plot the covariance matrix. Defaults to True.
+
+    Returns:
+        tuple[np.ndarray, Figure]: The covariance matrix itself, and a figure that contains the
+            covariance matrix plot (or be blank if `plot_cov` is False)
     """
-    Making a plot of the beam and contours for looks
-
-    """
-
-    tabp_sum = np.sum(tabp, axis=0)
-
-    map_extent = [grid_ra.min(), grid_ra.max(), grid_dec.min(), grid_dec.max()]
-
-    aspect = "equal"
-
-    cmap = cm.get_sub_cmap(cm.cosmic, 0.1, 0.9)
-    cmap.set_bad("red")
-    contour_cmap = cm.get_sub_cmap(cm.cosmic_r, 0.1, 0.9)
-    cmapnorm_sum = colors.Normalize(vmin=1e-5, vmax=0.1, clip=True)
-    cmapnorm_indiv = colors.Normalize(vmin=1e-5, vmax=0.05, clip=True)
-
-    fig = plt.figure(figsize=(10, 10))
-    ax1 = fig.add_subplot(1, 1, 1)
-    ax1_img = ax1.imshow(
-        tabp_sum, aspect=aspect, extent=map_extent, cmap=cmap, norm=cmapnorm_sum
-    )
-
-    ax1.plot(
-        beam_cen_coords.ra.deg,
-        beam_cen_coords.dec.deg,
-        "Dy",
-        mec="k",
-        ms=5,
-        label="Beam centers",
-    )
-
-    if contours:
-        for ls, look in enumerate(tabp):
-            ax1.contour(
-                look,
-                origin="image",
-                extent=map_extent,
-                cmap=contour_cmap,
-                norm=cmapnorm_indiv,
-                linewidths=0.5,
-            )
-
-    ax1.legend(fontsize=18, loc=2)
-    ax1.set_xlabel("R.A. (ICRS)", fontsize=18, ha="center")
-    ax1.set_ylabel("Dec. (ICRS)", fontsize=18, ha="center")
-    ax1.minorticks_on()
-    ax1.tick_params(axis="both", which="major", labelsize=18)
-    ax1.tick_params(axis="both", which="major", length=9)
-    ax1.tick_params(axis="both", which="minor", length=4.5)
-    ax1.tick_params(axis="both", which="both", direction="out", right=True, top=True)
-
-    cbar = fig.colorbar(
-        ax1_img,
-        ax=fig.axes,
-        shrink=1,
-        orientation="horizontal",
-        location="top",
-        aspect=30,
-        pad=0.02,
-    )
-    cbar.ax.set_title(label, fontsize=18, ha="center")
-    cbar.ax.xaxis.set_ticks_position("top")
-    cbar.ax.tick_params(direction="in", length=5, bottom=True, top=True)
-    cbar.ax.xaxis.set_tick_params(labelsize=18)
-    return fig
-
-
-def covariance_estimation(obs_snr, obs_mask, obs_weights, nsim=10000, plot_cov=True):
     simulation_snr = st.multivariate_normal(obs_snr).rvs(nsim)
     simulation_ratio = (
         simulation_snr[:, obs_mask] / simulation_snr.T[obs_snr.argmax()][:, None]
@@ -127,8 +90,8 @@ def covariance_estimation(obs_snr, obs_mask, obs_weights, nsim=10000, plot_cov=T
         print("  WARNING: At least one covariance value is > abs(0.5)")
         print(covariance)
 
+    fig = plt.figure(figsize=(20, 10))
     if plot_cov:
-        fig = plt.figure(figsize=(20, 10))
         cmap = cm.get_sub_cmap(cm.guppy, 0.0, 1.0)
 
         ax1 = fig.add_subplot(1, 1, 1)
@@ -161,11 +124,31 @@ def covariance_estimation(obs_snr, obs_mask, obs_weights, nsim=10000, plot_cov=T
     return covariance, fig
 
 
-def chi2_calc(tabp_look, obs_mask, obs_snr, obs_weights, cov):
-    # The below operations essentially compute the least-squares
-    # regressions on the 2D maps. Because the arrays are multi-dimensional
-    # there's a bit of fiddling to make sure multiplications/summations
-    # happen across the correct dimensions.
+def chi2_calc(
+    tabp_look: np.ndarray,
+    obs_mask: np.ndarray,
+    obs_snr: np.ndarray,
+    obs_weights: np.ndarray,
+    cov: np.ndarray,
+) -> np.ndarray:
+    """Compute the chi-squared statistics based on the least-squares regression formalism.
+
+    The input data are multi-dimensional, and we only wish to compute the statistic across
+    the coordinate grid dimensions, thus there is some reshaping at different stages to
+    ensure the multiplications/summations corresponding to the normal matrix products occur
+    in the correct axes.
+
+    Args:
+        tabp_look (np.ndarray): An array of TAB power patterns (2D arrays).
+        obs_mask (np.ndarray): The mask which identifies which TABs are of interest.
+        obs_snr (np.ndarray): Observed detection metric (i.e., snr) for each TAB.
+        obs_weights (np.ndarray): The relative weights for each observed detection metric in a TAB.
+        cov (np.ndarray): The covariance matrix between TAB pairs.
+
+    Returns:
+        np.ndarray: A 2D chi-square map which can be processed to identify statistical peaks
+            that correspond to high localisation relative probabilities.
+    """
     P_array = tabp_look[obs_mask, ...] / tabp_look[obs_snr.argmax(), ...]
     R_array = obs_weights[:, None, None] - P_array.squeeze()
     cov_inv = np.linalg.inv(cov)
@@ -272,22 +255,45 @@ def mahal_error(prob: np.ndarray, sigma: float = 1) -> float | None:
     return prob_sigma_level
 
 
-def chi2_plot(
-    tab0,
-    chi2,
-    grid_ra,
-    grid_dec,
-    obs_beam_centers,
-    obs_beam_snrs,
-    obs_mask,
-    contour_levels=None,
-    truth_coords=None,
-    window=None,
-    show_bestfit_loc=True,
-    locfig_lims=None,
-):
-    map_extent = [grid_ra.min(), grid_ra.max(), grid_dec.min(), grid_dec.max()]
+def localise_and_plot(
+    tab0: np.ndarray,
+    chi2: np.ndarray,
+    grid_ra: np.ndarray,
+    grid_dec: np.ndarray,
+    obs_beam_centers: SkyCoord,
+    obs_beam_snrs: np.ndarray,
+    obs_mask: np.ndarray,
+    truth_coords: SkyCoord | None = None,
+    window: str | None = None,
+    show_bestfit_loc: bool = True,
+    locfig_lims: str | list | None = None,
+) -> Figure:
+    """Generate the localisation maps, identify peaks and uncertainties.
+    Plot the results and report the best position identified with a
+    corresponding uncertainty.
 
+    Args:
+        tab0 (np.ndarray): The TAB pattern corresponding to the best initial detection statistic.
+        chi2 (np.ndarray): A 2D chi-square map encoding the localisation probabilities.
+        grid_ra (np.ndarray): The 2-D mesh grid in R.A. that defines the probability map coordinate.
+        grid_dec (np.ndarray): The 2-D mesh grid in Dec. that defines the probability map coordinate.
+        obs_beam_centers (SkyCoord): The TAB centre coordinates.
+        obs_beam_snrs (np.ndarray): Observed detection metric (i.e., snr) for each TAB.
+        obs_mask (np.ndarray): The mask which identifies which TABs are of interest.
+        truth_coords (SkyCoord | None, optional): Coordinates of the true source position (for comparison).
+            Defaults to None.
+        window (str | None, optional): The kind of smoothing approach to apply to the localisation statistic.
+            Defaults to None.
+        show_bestfit_loc (bool, optional): Whether to show the best localisation cross-hair. Defaults to True.
+        locfig_lims (str | list | None, optional): The x- and y-limits to plot in the figure.
+            Also accepts the string "zoom" which automatically scales axes and includes a inset figure.
+            Defaults to None.
+
+    Returns:
+        Figure: The figure containing the localisation plot.
+    """
+
+    map_extent = [grid_ra.min(), grid_ra.max(), grid_dec.min(), grid_dec.max()]
     aspect = "auto"
     origin = "lower"
     cmap = cm.sapphire_r
@@ -301,7 +307,7 @@ def chi2_plot(
         )
         ctr_coord = np.squeeze(obs_beam_centers[~obs_mask])
         dists = [
-            c.to(u.deg).value for c in ctr_coord.separation(obs_beam_centers[obs_mask])
+            c.to("deg").value for c in ctr_coord.separation(obs_beam_centers[obs_mask])
         ]
         max_dist = max(dists)
         mu = np.array([ctr_coord.ra.deg, ctr_coord.dec.deg])
@@ -318,9 +324,14 @@ def chi2_plot(
     else:
         wt = 1.0
 
+    # Regularise, if required, then compute probabilities
     chi2 = wt * chi2
     lnL = -0.5 * chi2
     prob = np.exp(lnL) / np.exp(lnL).sum()
+    # Mask probabilities less than 1-in-10^9
+    # This helps avoid plotting issues and problems
+    # when summing/using the map to compute other statistics
+    # since the VAST majority of values are tiny
     prob[prob < 1e-9] = 0
 
     # Coordinates associated with minimum chi2
@@ -350,6 +361,7 @@ def chi2_plot(
         )
         print(f"  {sig}-sigma sym. pos. err. = {sig_err*60:g} arcmin")
 
+    # Prepare the figure and place artist elements
     fig = plt.figure(figsize=(8, 6), constrained_layout=True)
     ax1 = fig.add_subplot(1, 1, 1)
 
@@ -359,7 +371,6 @@ def chi2_plot(
         aspect=aspect,
         extent=map_extent,
         cmap=cmap,
-        # norm=cmapnorm,
         origin=origin,
         vmin=contour_levels.min(),
     )
@@ -500,6 +511,8 @@ def chi2_plot(
         )
 
     elif locfig_lims is not None:
+        # This is mostly for debugging as the user would need to explicitly c
+        # call chi2_plot here rather than use the commandline.
         ax1.set_xlim(locfig_lims[0], locfig_lims[1])
         ax1.set_ylim(locfig_lims[2], locfig_lims[3])
 
@@ -539,6 +552,7 @@ def chi2_plot(
             fontsize=12,
         )
     else:
+        # More debugging, with less information of plot.
         # Truth Coordinates for comparison
         if truth_coords is not None:
             ax1.plot(
@@ -569,22 +583,41 @@ def chi2_plot(
     return fig
 
 
-def seekat(
-    detfile,
-    tabp_look,
-    grid_ra,
-    grid_dec,
-    cov_nsim=10000,
-    plot_cov=True,
-    truth_coords=None,
-    window=None,
-):
+def localise(
+    detfile: str,
+    tabp_look: np.ndarray,
+    grid_ra: np.ndarray,
+    grid_dec: np.ndarray,
+    cov_nsim: int = 10000,
+    plot_cov: bool = True,
+    truth_coords: SkyCoord | None = None,
+    window: str | None = None,
+) -> tuple[Figure, Figure]:
+    """Execute the localisation procedure.
+
+    Args:
+        detfile (str): The file path containing ra, dec and detection significance information.
+        tabp_look (np.ndarray): The array of TAB patters for each pointing in `detfile`
+        grid_ra (np.ndarray): The 2-D mesh grid in R.A. that defines the probability map coordinate.
+        grid_dec (np.ndarray): The 2-D mesh grid in Dec. that defines the probability map coordinate.
+        cov_nsim (int, optional): How many random multivariate draws to make per TAB when estimating
+            the covariance. Defaults to 10000.
+        plot_cov (bool, optional): Whether to plot the covariance matrix. Defaults to True.
+        truth_coords (SkyCoord | None, optional): Coordinates of the true source position (for comparison).
+            Defaults to None.
+        window (str | None, optional): The kind of smoothing approach to apply to the localisation statistic.
+            Defaults to None.
+
+    Returns:
+        tuple[Figure, Figure]: Two Figure objects containing the localisation map and covariance matrix.
+    """
+
     obs_beam_centers, obs_snr, obs_weights, obs_mask = snr_reader(detfile)
     covariance, cov_fig = covariance_estimation(
         obs_snr, obs_mask, obs_weights, nsim=cov_nsim, plot_cov=plot_cov
     )
     chi2 = chi2_calc(tabp_look, obs_mask, obs_snr, obs_weights, covariance)
-    localization_fig = chi2_plot(
+    localization_fig = localise_and_plot(
         tabp_look[obs_snr.argmax(), ...].squeeze(),
         chi2,
         grid_ra,
@@ -592,7 +625,6 @@ def seekat(
         obs_beam_centers,
         obs_snr,
         obs_mask,
-        contour_levels=None,
         truth_coords=truth_coords,
         window=window,
         show_bestfit_loc=True,
