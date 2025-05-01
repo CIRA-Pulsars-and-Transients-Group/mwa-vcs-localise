@@ -39,7 +39,7 @@ def get_primary_beam_power(
 
     Returns:
         dict[str, np.ndarray]: A dictionary with keys corresponding to the Stokes
-            parameters computed, and values being the 2D sky map of the primary beam response.
+            parameters computed, and values being the flattened sky map of the primary beam response.
     """
 
     za = np.pi / 2 - alt
