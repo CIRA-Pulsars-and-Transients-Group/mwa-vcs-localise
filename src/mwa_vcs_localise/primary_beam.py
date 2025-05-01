@@ -4,7 +4,6 @@
 # Licensed under the Academic Free License version 3.0 #
 ########################################################
 
-from typing import Union
 import numpy as np
 from mwalib import MetafitsContext
 from mwa_hyperbeam import FEEBeam as PrimaryBeam
@@ -13,42 +12,36 @@ from mwa_hyperbeam import FEEBeam as PrimaryBeam
 def get_primary_beam_power(
     metadata: MetafitsContext,
     freq_hz: float,
-    alt: Union[float, np.ndarray],
-    az: Union[float, np.ndarray],
+    alt: float | np.ndarray,
+    az: float | np.ndarray,
     stokes: str = "I",
-    zenithNorm: bool = True,
+    zenith_norm: bool = True,
     show_path: bool = False,
 ) -> dict[str, np.ndarray]:
-    """Calculate the primary beam response (full Stokes) for a
-    given observation over a grid of the sky.
+    """Calculate the primary beam response (full Stokes) for a given observation
+    over a grid of the sky.
 
-    :param metadata: A mwalib.MetafitsContext object that contains the
-                     array configuration and delay settings.
-    :type metadata: MetafitsContext
-    :param freq_hz: Observing radio frequency, in Hz.
-    :type freq_hz: float
-    :param alt: Desired altitude for the pointing direction, in radians.
-                Can be an array.
-    :type alt: np.ndarray, float
-    :param az: Desired azimuth for the pointing direction, in radians.
-               Can be an array.
-    :type az: np.ndarray, float
-    :param stokes: Which Stokes parameters to compute and return.
-                   A string containing some unique combination of "IQUV".
-                   Values are returned in the order requested here.
-    :type stokes: str
-    :param zenithNorm: Whether to normalise the primary beam response to
-                       the value at zenith (maximum sensitivity).
-                       Defaults to True.
-    :type zenithNorm: bool, optional
-    :param show_path: Show the einsum optimization path. Defaults to False.
-    :type show_path: bool, optional
-    :return: The primary beam response for each requested Stokes parameter
-             over the provided sky positions. Note: The position axis is
-             flattened and needs to be reshaped based on the input az/alt
-             arguments (or however the user desires).
-    :rtype: dict[str, np.ndarray]
+    Args:
+        metadata (MetafitsContext): A mwalib.MetafitsContext object that contains the
+            array configuration and delay settings.
+        freq_hz (float): Observing radio frequency, in Hz.
+        alt (float | np.ndarray): Desired altitude for the pointing direction, in radians.
+        az (float | np.ndarray): Desired azimuth for the pointing direction, in radians.
+        stokes (str, optional): Which Stokes parameters to compute and return.
+            A string containing some unique combination of "IQUV".
+            Values are returned in the order requested here. Defaults to "I".
+        zenith_norm (bool, optional): Whether to normalise the primary beam response to
+            the value at zenith (maximum sensitivity). Defaults to True.
+        show_path (bool, optional): Show the `einsum` optimization path. Defaults to False.
+
+    Raises:
+        ValueError: If an invalid Stokes parameter is requested.
+
+    Returns:
+        dict[str, np.ndarray]: A dictionary with keys corresponding to the Stokes
+            parameters computed, and values being the 2D sky map of the primary beam response.
     """
+
     za = np.pi / 2 - alt
     beam = PrimaryBeam()
 
@@ -59,7 +52,7 @@ def get_primary_beam_power(
         freq_hz,
         metadata.delays,
         np.ones_like(metadata.delays),
-        zenithNorm,
+        zenith_norm,
     )
     print("... creating sky response")
     J = jones.reshape(-1, 2, 2)  # shape = (npix, 2, 2)
@@ -95,11 +88,6 @@ def get_primary_beam_power(
     if show_path:
         print(einsum_path[0])
         print(einsum_path[1])
-    # This einsum does the following operations:
-    # - N is our "batch" dimension, so we can do a batch of N matrix multiplications
-    # - first, we do the multiplication of N (k x i) Jones matrices onto our (i x j) Pauli matrix
-    # - then we do the multiplication of the N (j x k) composite matrices onto the inverse Jones matrix (j x k)
-    # - finally, the "->N" symbol implies the trace (sum of diagonals) of each N matrices
 
     stokes_response = dict()
     for st in stokes:
