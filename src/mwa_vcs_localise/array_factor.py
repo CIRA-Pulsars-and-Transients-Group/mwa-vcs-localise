@@ -16,20 +16,25 @@ def extract_working_tile_positions(
 ) -> tuple[np.ndarray, int, int]:
     """Extract tile position information required for beamforming and/or
     computing the array factor quantity from a metafits structure.
+
     Flagged tiles are automatically excluded from the result.
 
-    :param metadata: An MWALIB MetafitsContext structure
-                     containing the array layout information.
-    :type metadata: MetafitsContext
-    :return: Working tile positions and electrical lengths for
-             beamforming. Formatted as an array of arrays, where
-             each item in the outer array is:
-                [east_m, north_m, height_m, electrical_length_m]
-             for a single tile.
-             Also returns the number of unflagged tiles, and the
-             number of flagged tiles.
-    :rtype: tuple(np.ndarray, int, int)
+
+    Args:
+        metadata (MetafitsContext): An MWALIB MetafitsContext structure
+            containing the array layout information.
+
+    Returns:
+        tuple[np.ndarray, int, int]: A tuple containing:
+            (1) Working tile positions and electrical lengths for
+                beamforming, formatted as an array of arrays, where
+                each item in the outer array is:
+                    [east_m, north_m, height_m, electrical_length_m]
+                for a single tile.
+             (2) The number of unflagged tiles, and
+             (3) The number of flagged tiles.
     """
+
     # Gather the tile positions into a "vector" for each tile
     tile_positions = np.array(
         [
@@ -58,27 +63,27 @@ def extract_working_tile_positions(
 
 
 def calc_geometric_delays(
-    positions: np.ndarray, freq_hz: float, alt: float, az: float
+    positions: np.ndarray,
+    freq_hz: float,
+    alt: float | np.ndarray,
+    az: float | np.ndarray,
 ) -> np.ndarray:
     """Compute the geometric delay phases for each element position in order to
     "phase up" to the provided position at a specific frequency. These are the
     phasors used in a beamforming operation.
 
-    :param positions: An array or element position vectors, including their
-                      equivalent electrical length, in metres.
-    :type positions: np.ndarray
-    :param freq_hz: Observing radio frequency, in Hz.
-    :type freq_hz: float
-    :param alt: Desired altitude for the pointing direction, in radians.
-                Can be an array.
-    :type alt: np.ndarray, float
-    :param az: Desired azimuth for the pointing direction, in radians.
-               Can be an array.
-    :type az: np.ndarray, float
-    :return: The required phasors needed to rotate the element patterns to
-             each requested az/alt pair.
-    :rtype: np.ndarray
+    Args:
+        positions (np.ndarray): An array or element position vectors, including their
+            equivalent electrical length, in metres.
+        freq_hz (float): Observing radio frequency, in Hz.
+        alt (float | np.ndarray): Desired altitude for the pointing direction, in radians.
+        az (float | np.ndarray): Desired azimuth for the pointing direction, in radians.
+
+    Returns:
+        np.ndarray: The required phasors needed to rotate the element patterns to
+            each requested az/alt pair.
     """
+
     # Create the unit vector(s)
     u = np.array(
         [
@@ -113,16 +118,17 @@ def calc_array_factor_power(look_w: np.ndarray, target_w: np.ndarray) -> np.ndar
     """Compute the array factor power from a given pointing phasor
     and one or more target directions.
 
-    :param look_w: The complex phasor representing the tile phases
-        in the desired "look direction".
-    :type look_w: np.array, complex
-    :param target_w: The complex phasor(s) representing the tile
-        phases required to look in the desired sample directions.
-    :type target_w: np.ndarray, complex
-    :return: The absolute array factor power, for each given
-        target direction.
-    :rtype: np.ndarray
+    Args:
+        look_w (np.ndarray): The complex phasor representing the tile phases
+            in the desired "look direction".
+        target_w (np.ndarray): The complex phasor(s) representing the tile
+            phases required to look in the desired sample directions.
+
+    Returns:
+        np.ndarray: The absolute array factor power, for each given
+            target direction.
     """
+
     # At this stage, the shape of target_w = (nant, n_ra, n_dec) and while the shape of look_w = (nant,)
     print("... summing over antennas")
     sum_over_antennas = np.tensordot(np.conjugate(look_w), target_w, axes=1)
