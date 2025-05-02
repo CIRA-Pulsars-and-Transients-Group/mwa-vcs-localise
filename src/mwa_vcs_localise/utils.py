@@ -157,7 +157,7 @@ def plot_array_layout(
     )
     plt.xlim(ew_limits)
     plt.ylim(ns_limits)
-    plt.legend(fontsize=10)
+    plt.legend(fontsize=12)
     plt.xlabel("East coordinate from array centre (m)", fontsize=14)
     plt.ylabel("North coordiante from array centre (m)", fontsize=14)
     plt.title(
@@ -202,7 +202,7 @@ def plot_baseline_distribution(context: MetafitsContext) -> None:
         transform=ax.transAxes,
         va="top",
         ha="right",
-        fontsize=10,
+        fontsize=12,
     )
     plt.xlim(0, None)
     plt.ylim(None, ymax)
