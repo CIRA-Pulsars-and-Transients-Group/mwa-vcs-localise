@@ -6,6 +6,8 @@ obstime="2018-11-12T13:30:00"
 singlefreq=154240000
 detection_file="initial_detections_0026.txt"
 
+# Get the metafits files from the MWA web service.
+wget "http://ws.mwatelescope.org/metadata/fits?obs_id=${obsid}" -O ${metafits}
 
 # Regenerate almost identical subfigures as in Appendix Figure 1.
 for reg in none gaussian tab;do
