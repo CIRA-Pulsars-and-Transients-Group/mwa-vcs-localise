@@ -86,9 +86,9 @@ def main():
         help="Whether to produce plots of beam patterns.",
     )
     parser.add_argument(
-        "--seekat",
+        "--localise",
         action="store_true",
-        help="Whether to estimate localization based on seeKAT method.",
+        help="Actually do the localisation and report results.",
     )
     parser.add_argument(
         "--detfile",
@@ -109,6 +109,14 @@ def main():
         choices=["none", "tab", "gaussian"],
         default="tab",
     )
+    parser.add_argument(
+        "--loc_fig_lims",
+        type=str,
+        help="A set of 4 numbers describing the x- and y-limits to plot in the localisation figure. "
+        "May also be 'zoom' which will automatically pick an sensible range for plotting. "
+        "Expected format: 'x0 x1 y0 y1'.",
+        default="zoom",
+    )
 
     args = parser.parse_args()
     if len(args.freq) > 10:
@@ -124,6 +132,11 @@ def main():
     else:
         regularisation_fn = args.regularise
     print(f"Regularisation function requested: {regularisation_fn}")
+
+    if args.loc_fig_lims != "zoom":
+        loc_fig_lims = [float(x) for x in args.loc_fig_lims.split(" ")]
+    else:
+        loc_fig_lims = "zoom"
 
     tt0 = timer.time()
     print("Preparing metadata...")
@@ -357,7 +370,7 @@ def main():
     print(f"Done!! (Took {tt1-tt0} seconds.)\n")
 
     # Execute the localisation method using the TABs and detection data
-    if args.seekat:
+    if args.localise:
         if args.detfile is not None:
             if args.truth is not None:
                 true_coords = SkyCoord(
@@ -374,6 +387,7 @@ def main():
                 grid_dec,
                 truth_coords=true_coords,
                 window=regularisation_fn,
+                loc_plot_lims=loc_fig_lims,
             )
             loc.savefig("localisation.png", dpi=200)
             cov.savefig("covariance.png", dpi=200)
