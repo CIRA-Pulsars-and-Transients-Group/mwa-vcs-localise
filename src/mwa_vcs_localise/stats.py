@@ -591,6 +591,7 @@ def localise(
     plot_cov: bool = True,
     truth_coords: SkyCoord | None = None,
     window: str | None = None,
+    loc_plot_lims: list | str | None = "zoom",
 ) -> tuple[Figure, Figure]:
     """Execute the localisation procedure.
 
@@ -606,6 +607,9 @@ def localise(
             Defaults to None.
         window (str | None, optional): The kind of smoothing approach to apply to the localisation statistic.
             Defaults to None.
+        loc_plot_lims (str | list | None, optional): The x- and y-limits to plot in the localisation figure.
+            Also accepts the string "zoom" which automatically scales axes and includes a inset figure.
+            Defaults to "zoom".
 
     Returns:
         tuple[Figure, Figure]: Two Figure objects containing the localisation map and covariance matrix.
@@ -627,6 +631,6 @@ def localise(
         truth_coords=truth_coords,
         window=window,
         show_bestfit_loc=True,
-        locfig_lims="zoom",
+        locfig_lims=loc_plot_lims,
     )
     return localization_fig, cov_fig
