@@ -92,7 +92,7 @@ def find_characteristic_baseline(
     tile_positions = np.delete(tile_positions, np.where(tile_flags & True), axis=0)
 
     dist = cdist(tile_positions, tile_positions)
-    dist = np.delete(dist, np.where(dist <= 0.01))  # remove autos
+    dist = np.delete(dist.flatten(), np.where(dist.flatten() <= 0.01))  # remove autos
 
     # use a KDE approach to estimate the mode of the baseline distribution
     dist_mode = calculate_point_estimate("mode", dist)
@@ -188,7 +188,7 @@ def plot_baseline_distribution(context: MetafitsContext) -> None:
 
     fig = plt.figure(figsize=(8, 6))
     ax = fig.add_subplot()
-    ax.hist(b, bins="auto")
+    ax.hist(b, bins=np.arange(0, b.max(), 10))
     ymax = max(ax.get_ylim())
     for i in hdi:
         ax.fill_between(i, 0, ymax, color="0.8", alpha=0.5)
