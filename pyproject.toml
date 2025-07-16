@@ -27,6 +27,7 @@ dependencies = [
   "matplotlib",
   "cmasher",
   "scipy",
+  "arviz",
   "mwalib",
   "mwa_hyperbeam",
 ]
