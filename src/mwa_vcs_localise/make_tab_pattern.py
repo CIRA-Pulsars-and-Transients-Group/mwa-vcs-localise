@@ -9,8 +9,8 @@ import mwalib
 import numpy as np
 from astropy.coordinates import SkyCoord, AltAz
 from astropy.time import Time
-from astropy.constants import c as sol
 import astropy.units as u
+import astropy.constants as c
 from .utils import (
     MWA_LOCATION,
     sky_area,
@@ -122,7 +122,8 @@ def main():
     if len(args.freq) > 10:
         print("Cannot use more than 10 frequencies at a time, please adjust input.")
         exit(1)
-    freqs = np.array(args.freq)
+    freqs = np.array([f for f in args.freq]) * u.Hz
+
     if args.gridbox:
         grid_box = args.gridbox.split(" ")[:-2]
         grid_step = args.gridbox.split(" ")[-2:]
@@ -144,27 +145,25 @@ def main():
     context = mwalib.MetafitsContext(args.metafits)
 
     # Examine the array layout, collect tile positions and baseline information
-    density_interval_prob = 0.75
-    eff_max_baseline, b_intervals, max_baseline, baselines = (
-        find_characteristic_baseline(
-            context,
-            hdi_prob=density_interval_prob,
-        )
+    density_interval_prob = 0.90
+    char_baseline, max_baseline, hdi_baseline, baselines = find_characteristic_baseline(
+        context,
+        hdi_prob=density_interval_prob,
     )
+    eff_baseline = np.max(hdi_baseline) * u.m
     tile_positions, num_good, num_flagged = extract_working_tile_positions(context)
     num_tiles = num_good + num_flagged
     print(f"... number of tiles: {num_tiles}")
     print(f"... number of unflagged tiles: {num_good}")
     print(f"... number of baselines: {len(baselines)}")
-    print(f"... maximum baseline, D_max (m): {max_baseline}")
-    print(f"... characteristic baseline (mode), D_eff (m): {eff_max_baseline}")
-    print(f"... {density_interval_prob*100}% of baselines are between:")
-    for hdi in b_intervals:
-        print(f"     {hdi}")
-    if b_intervals.size > 2:
-        print("     CAUTION: multi-modal distribution.")
-    width = ((sol.value / freqs) / eff_max_baseline) * u.rad
-    print(f"... beam width ~ lambda/D_eff (arcmin): {width.to(u.arcminute).value}")
+    print(f"Maximum baseline, Bmax = {max_baseline*u.m:g}")
+    print(f"Approx. mode of baselines = {char_baseline*u.m:g}")
+    print(f"Effective baseline, Beff = {eff_baseline:g}")
+    print(f"Centre frequencies:")
+    for freq in freqs:
+        print(f"f = {freq.to(u.MHz):g}  λ = {(c.c/freq).to(u.m):g}")
+    width = ((c.c / freqs) / eff_baseline) * u.rad
+    print(f"... beam width ~ λ/Beff: {width.to(u.arcminute)}")
 
     # Define reference frame and time
     time = Time(args.time, format="isot", scale="utc")
@@ -271,11 +270,11 @@ def main():
             pbp_freq.append(None)
         else:
             # Compute the primary beam zenith-normalised power.
-            print(f"Computing primary beam power at frequency = {freq} Hz...")
+            print(f"Computing primary beam power at frequency = {freq}...")
             t0 = timer.time()
             pbp = get_primary_beam_power(
                 context,
-                freq,
+                freq.value,
                 target_positions_altaz.alt.rad,
                 target_positions_altaz.az.rad,
                 stokes="I",
@@ -309,19 +308,19 @@ def main():
         tabp_freq = []
         afp_freq = []
         for j, freq in enumerate(freqs):
-            print(f"Processing tied-array beam at frequency = {freq} Hz")
+            print(f"Processing tied-array beam at frequency = {freq}")
             print("Computing array factors...")
             t0 = timer.time()
             # Compute the array factor (tied-array beam weighting factor).
             look_psi = calc_geometric_delays(
                 tile_positions,
-                freq,
+                freq.value,
                 lp.alt.rad,
                 lp.az.rad,
             )
             target_psi = calc_geometric_delays(
                 tile_positions,
-                freq,
+                freq.value,
                 target_positions_altaz.alt.rad,
                 target_positions_altaz.az.rad,
             )
