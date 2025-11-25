@@ -39,9 +39,21 @@ MWA_LOCATION = EarthLocation.from_geodetic(
 
 def generate_wcs_grid(
     grid_ctr: SkyCoord,
-    arsec_per_pixel: float = 36.0,
-    image_size: int | tuple[int] = (1000, 1000),
+    arcsec_per_pixel: float = 36.0,
+    image_size: int | tuple[int] = 1000,
 ) -> tuple[np.ndarray, np.ndarray, WCS]:
+    """Create a WCS frame and grid provided a central position,
+    nominal pixel size and "image size" (i.e., grid size).
+
+    Args:
+        grid_ctr (SkyCoord): The centre coordinate for the image/grid.
+        arcsec_per_pixel (float, optional): The number of arcseconds per pixel. Defaults to 36.0.
+        image_size (int | tuple[int], optional): The image size, in pixels. Defaults to 1000.
+
+    Returns:
+        tuple[np.ndarray, np.ndarray, WCS]: The grid in RA, Dec and the WCS object which can
+        be used elsewhere to ensure consistent sky coordinate navigation and projections
+    """
     # Set image size in pixels
     if isinstance(image_size, tuple):
         naxis1 = image_size[0]
@@ -55,7 +67,7 @@ def generate_wcs_grid(
     crpix2 = naxis2 / 2
 
     # Set the pixel scale
-    pixel_scale = arsec_per_pixel / 3600  # deg/pixel
+    pixel_scale = arcsec_per_pixel / 3600  # deg/pixel
 
     wcs_dict = {
         "CTYPE1": "RA---TAN",
@@ -64,23 +76,23 @@ def generate_wcs_grid(
         "CRVAL2": grid_ctr.dec.deg,
         "CRPIX1": crpix1,
         "CRPIX2": crpix2,
-        "CD1_1": -pixel_scale,
-        "CD1_2": 0.0,
-        "CD2_1": 0.0,
-        "CD2_2": pixel_scale,
+        "CUNIT1": "deg",
+        "CUNIT2": "deg",
+        "CDELT1": -pixel_scale,
+        "CDELT2": pixel_scale,
         "NAXIS1": naxis1,
         "NAXIS2": naxis2,
     }
     wcs = WCS(wcs_dict)
 
     # Generate a grid in pixel space
-    gx, gy = np.meshgrid(np.arannge(naxis1), np.arange(naxis2))
+    gx, gy = np.meshgrid(np.arange(naxis1), np.arange(naxis2))
     pixel_coords = np.column_stack([gx.ravel(), gy.ravel()])
 
     # Convert pixel coordinates to "world" coordinates
     world_coords = wcs.wcs_pix2world(pixel_coords, 0)
-    grid_ra = world_coords[:, 0].reshape((gy, gx))
-    grid_dec = world_coords[:, 1].reshape((gy, gx))
+    grid_ra = world_coords[:, 0].reshape(gy.shape)
+    grid_dec = world_coords[:, 1].reshape(gy.shape)
 
     return grid_ra, grid_dec, wcs
 
