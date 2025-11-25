@@ -19,6 +19,7 @@ from .utils import (
     plot_baseline_distribution,
     plot_primary_beam,
     plot_tied_array_beam,
+    generate_wcs_grid,
 )
 from .array_factor import (
     extract_working_tile_positions,
@@ -74,6 +75,11 @@ def main():
         where (RA0, Dec0) is one corner and (RA1, Dec1) is the opposite corner, and '*step' 
         is the grid pixel size in arcsec.""",
         default=None,
+    )
+    parser.add_argument(
+        "--use_wcs",
+        action="store_true",
+        help="Use a WCS approach to define a grid around the central point.",
     )
     parser.add_argument(
         "--nopb",
@@ -243,6 +249,18 @@ def main():
             unit=("deg", "deg"),
         )
         print(f"... target positions array shape, (nRA, nDec) = {n_ra, n_dec}")
+    elif args.use_wcs:
+        print("Generating a WCS grid around the central localisation position...")
+        print(f"   {look_positions[0].to_string('hmsdms', sep=':', precision=2)}")
+        grid_ra, grid_dec, wcs = generate_wcs_grid(
+            look_positions[0], arcsec_per_pixel=10.0, image_size=300
+        )
+        target_positions = SkyCoord(
+            grid_ra,
+            grid_dec,
+            frame="icrs",
+            unit=("deg", "deg"),
+        )
     else:
         for p in args.position.split(" "):
             target_ras.append(p.split("_")[0])
@@ -387,6 +405,7 @@ def main():
                 truth_coords=true_coords,
                 window=regularisation_fn,
                 loc_plot_lims=loc_fig_lims,
+                wcs=wcs,
             )
             loc.savefig("localisation.png", dpi=200)
             cov.savefig("covariance.png", dpi=200)
