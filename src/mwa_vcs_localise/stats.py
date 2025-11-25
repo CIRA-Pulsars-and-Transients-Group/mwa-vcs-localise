@@ -80,14 +80,12 @@ def covariance_estimation(
         simulation_snr[:, obs_mask] / simulation_snr.T[obs_snr.argmax()][:, None]
     )
     covariance = np.cov(simulation_ratio, rowvar=False)
-    if np.all(np.abs(covariance) < 1e-2):
-        print("  Covariances are all < abs(1e-2)")
-        print(covariance)
-    elif np.all(np.abs(covariance) > 0.15):
-        print("  Covariances are all > abs(0.15)")
-        print(covariance)
-    if np.any(np.abs(covariance) > 0.5):
-        print("  WARNING: At least one covariance value is > abs(0.5)")
+    if np.all(np.abs(covariance) < 0.2):
+        print("Covariances are all < abs(0.2)")
+    elif np.all(np.abs(covariance) < 0.5):
+        print("Covariances are all > abs(0.5)")
+    else:
+        print("WARNING: At least one covariance value is > abs(0.5)")
         print(covariance)
 
     fig = plt.figure(figsize=(20, 10))
@@ -266,6 +264,7 @@ def localise_and_plot(
     window: str | None = None,
     show_bestfit_loc: bool = True,
     locfig_lims: str | list | None = None,
+    wcs=None,
 ) -> Figure:
     """Generate the localisation maps, identify peaks and uncertainties.
     Plot the results and report the best position identified with a
@@ -362,29 +361,27 @@ def localise_and_plot(
 
     # Prepare the figure and place artist elements
     fig = plt.figure(figsize=(8, 6), constrained_layout=True)
-    ax1 = fig.add_subplot(1, 1, 1)
+    ax1 = fig.add_subplot(1, 1, 1, projection=wcs)
 
-    # localisation map
+    # Localisation map
     ax1.imshow(
         prob,
         aspect=aspect,
-        extent=map_extent,
         cmap=cmap,
         origin=origin,
         vmin=contour_levels.min(),
     )
 
-    # contours for specific levels of chi2
+    # Contours for specific levels of chi2
     ax1_ctr = ax1.contour(
         prob,
         levels=contour_levels,
         linestyles=ctr_ls,
         colors=ctr_colors,
-        extent=map_extent,
         origin=origin,
     )
 
-    # Beams
+    # Beams and S/N measurements
     ax1.plot(
         obs_beam_centers.ra.deg[obs_mask],
         obs_beam_centers.dec.deg[obs_mask],
@@ -392,6 +389,7 @@ def localise_and_plot(
         mec="k",
         ms=5,
         label="Beam centres",
+        transform=ax1.get_transform("world"),
     )
     ax1.plot(
         obs_beam_centers.ra.deg[~obs_mask],
@@ -400,184 +398,149 @@ def localise_and_plot(
         mec="r",
         ms=5,
         label="Beam centre with max. S/N",
+        transform=ax1.get_transform("world"),
     )
     for j, sobs in enumerate(obs_beam_snrs):
         ax1.annotate(
             f"{sobs:g}",
             xy=(obs_beam_centers.ra.deg[j], obs_beam_centers.dec.deg[j]),
-            ha="right",
+            xytext=(4, 0),
+            xycoords=ax1.get_transform("world"),
+            ha="left",
             va="bottom",
             textcoords="offset points",
-            xytext=(-4, 0),
         )
 
-    # If set, now zoom on specified region
-    if locfig_lims == "zoom":
-        # add a zoomed version of the localisation island
-        excess = 2 * sym_err
-        x1, x2 = best_ra - excess, best_ra + excess
-        y1, y2 = best_dec - excess, best_dec + excess
-        ax1_img_inset = ax1.inset_axes(
-            [0.65, 0.65, 0.34, 0.34], xlim=(x1, x2), ylim=(y1, y2)
-        )
-        ax1_img_inset.set_aspect(ax1.get_aspect())
+    # Padding around the centre of the island in the inset
+    inset_pad = 1.5 * sym_err
+    ix1, ix2 = best_ra + inset_pad, best_ra - inset_pad
+    iy1, iy2 = best_dec - inset_pad, best_dec + inset_pad
+    ibb_pix = wcs.world_to_pixel(
+        SkyCoord([ix1, ix2], [iy1, iy2], frame="icrs", unit="deg")
+    )
 
-        ax1_img_inset.imshow(
-            prob,
-            aspect=aspect,
-            extent=map_extent,
-            cmap=cmap,
-            interpolation="none",
-            origin=origin,
-            vmin=contour_levels.min(),
-        )
-        ax1_img_inset.contour(
-            prob,
-            levels=contour_levels,
-            linestyles=ctr_ls,
-            colors=ctr_colors,
-            extent=map_extent,
-            origin=origin,
-        )
-        ax1_img_inset.tick_params(axis="both", labelrotation=45, pad=-2)
-        ax1.indicate_inset_zoom(ax1_img_inset, edgecolor="black")
-        pad = (
-            np.array(
-                [
-                    obs_beam_centers[~obs_mask].separation(o).deg
-                    for o in obs_beam_centers[obs_mask]
-                ]
-            )
-            .flatten()
-            .max()
-        )
+    # Position the inset in the top-right corner of the figure
+    ax1_img_inset = ax1.inset_axes([0.675, 0.675, 0.31, 0.31], projection=wcs)
+    ax1_img_inset.set_aspect(ax1.get_aspect())
 
-        # Adjust the limits, and bias the x-range to have more space on the right
-        # so that the inset box is less likely to overalp elements.
-        ax1.set_xlim(
-            min(obs_beam_centers.ra.deg) - pad,
-            max(obs_beam_centers.ra.deg) + 1.5 * pad,
+    # Localisation map (inset)
+    ax1_img_inset.imshow(
+        prob,
+        aspect=aspect,
+        cmap=cmap,
+        interpolation="none",
+        origin=origin,
+        vmin=contour_levels.min(),
+    )
+
+    # Contours for specific levels of chi2 (inset)
+    ax1_img_inset.contour(
+        prob,
+        levels=contour_levels,
+        linestyles=ctr_ls,
+        colors=ctr_colors,
+        origin=origin,
+    )
+
+    # Set inset limits based on bounding box padding (bb_pix) calculated above
+    ax1_img_inset.set_xlim(ibb_pix[0])
+    ax1_img_inset.set_ylim(ibb_pix[1])
+
+    # Draw the inset bounding box on the parent axis
+    ax1.indicate_inset_zoom(ax1_img_inset, edgecolor="black")
+
+    # Set some axis customisations
+    ax1_img_inset.xaxis.set_major_locator(mtick.MaxNLocator(5, prune="both"))
+    ax1_img_inset.yaxis.set_major_locator(mtick.MaxNLocator(5, prune="both"))
+    ax1_img_inset.grid(ls=":")
+    ax1_img_inset.tick_params(axis="both", direction="out")
+    ax1_img_inset.set_xlabel(" ")
+    ax1_img_inset.set_ylabel(" ")
+
+    # Add a best-fit coordinate crosshair in the inset, and include best-fit position in figure title
+    if show_bestfit_loc:
+        ax1_img_inset.errorbar(
+            best_ra,
+            best_dec,
+            yerr=sym_err,
+            xerr=sym_err,
+            marker="none",
+            color="k",
+            markersize=1,
+            mew=1,
+            label="Best fit localisation",
+            transform=ax1_img_inset.get_transform("world"),
         )
-        ax1.set_ylim(
-            min(obs_beam_centers.dec.deg) - pad,
-            max(obs_beam_centers.dec.deg) + pad,
-        )
-
-        ax1_img_inset.xaxis.set_major_locator(mtick.MaxNLocator(5, prune="both"))
-        ax1_img_inset.yaxis.set_major_locator(mtick.MaxNLocator(5, prune="both"))
-        ax1_img_inset.grid()
-
-        # Best-fit coordinate crosshair
-        if show_bestfit_loc:
-            ax1_img_inset.errorbar(
-                best_ra,
-                best_dec,
-                yerr=sym_err,
-                xerr=sym_err,
-                marker="none",
-                color="k",
-                markersize=1,
-                mew=1,
-                label="Best fit localisation",
-            )
-            ax1.set_title(
-                f"Best-fit localisation = ({best_ra:g}, {best_dec:g}) $\pm$ {sym_err:g} deg",
-            )
-
-        # Truth Coordinates for comparison
-        if truth_coords is not None:
-            ax1_img_inset.plot(
-                truth_coords.ra.deg,
-                truth_coords.dec.deg,
-                "or",
-                markersize=5,
-                mew=1,
-                mfc="none",
-                label="Truth",
-            )
-
-        # Collect and fix legend handles and labels
-        ctr_h = ax1_ctr.legend_elements()[0]
-        ctr_l = [f"${s}\sigma$" for s in sigma_levels]
-        bpt_h, bpt_l = ax1.get_legend_handles_labels()
-        ins_h, ins_l = ax1_img_inset.get_legend_handles_labels()
-        ax1.legend(
-            handles=ctr_h + bpt_h + ins_h,
-            labels=ctr_l + bpt_l + ins_l,
-            fontsize=12,
-            ncols=2,
-            loc="lower right",
+        ax1.set_title(
+            f"""Best-fit localisation = {best_coord_hms}\nUncertainty ({sigma_levels[0]}$\sigma$, no iono.) = $\pm$ {sym_err*60:g} arcmin""",
         )
 
-    elif locfig_lims is not None:
-        # This is mostly for debugging as the user would need to explicitly c
-        # call chi2_plot here rather than use the commandline.
-        ax1.set_xlim(locfig_lims[0], locfig_lims[1])
-        ax1.set_ylim(locfig_lims[2], locfig_lims[3])
-
-        # Best-fit coordinate crosshair
-        if show_bestfit_loc:
-            ax1.errorbar(
-                best_ra,
-                best_dec,
-                yerr=sym_err,
-                xerr=sym_err,
-                marker="none",
-                color="k",
-                markersize=1,
-                mew=1,
-                label="Best fit localisation",
-            )
-
-        # Truth Coordinates for comparison
-        if truth_coords is not None:
-            ax1.plot(
-                truth_coords.ra.deg,
-                truth_coords.dec.deg,
-                "or",
-                markersize=5,
-                mew=1,
-                mfc="none",
-                label="Truth",
-            )
-
-        # Collect and fix legend handles and labels
-        ctr_h = ax1_ctr.legend_elements()[0]
-        ctr_l = [f"${s}\sigma$" for s in sigma_levels]
-        bpt_h, bpt_l = ax1.get_legend_handles_labels()
-        ax1.legend(
-            handles=ctr_h + bpt_h,
-            labels=ctr_l + bpt_l,
-            fontsize=12,
-        )
-    else:
-        # More debugging, with less information of plot.
-        # Truth Coordinates for comparison
-        if truth_coords is not None:
-            ax1.plot(
-                truth_coords.ra.deg,
-                truth_coords.dec.deg,
-                "or",
-                markersize=5,
-                mew=1,
-                mfc="none",
-                label="Truth",
-            )
-        # Collect and fix legend handles and labels
-        ctr_h = ax1_ctr.legend_elements()[0]
-        ctr_l = [f"${s}\sigma$" for s in sigma_levels]
-        bpt_h, bpt_l = ax1.get_legend_handles_labels()
-        ax1.legend(
-            handles=ctr_h + bpt_h,
-            labels=ctr_l + bpt_l,
-            fontsize=12,
+    # Add a truth coordinate for comparison to the inset
+    if truth_coords is not None:
+        ax1_img_inset.plot(
+            truth_coords.ra.deg,
+            truth_coords.dec.deg,
+            "or",
+            markersize=5,
+            mew=1,
+            mfc="none",
+            label="Truth",
+            transform=ax1_img_inset.get_transform("world"),
         )
 
-    ax1.set_xlabel("Right Ascension (deg)", fontsize=14, ha="center")
-    ax1.set_ylabel("Declination (deg)", fontsize=14, ha="center")
+    # Collect and fix legend handles and labels
+    ctr_h = ax1_ctr.legend_elements()[0]
+    ctr_l = [f"${s}\sigma$" for s in sigma_levels]
+    bpt_h, bpt_l = ax1.get_legend_handles_labels()
+    ins_h, ins_l = ax1_img_inset.get_legend_handles_labels()
+    ax1.legend(
+        handles=ctr_h + bpt_h + ins_h,
+        labels=ctr_l + bpt_l + ins_l,
+        fontsize=12,
+        ncols=2,
+        loc="lower right",
+    )
+
+    # Padding around the centre of the island in the parent axis
+    # with addition padding on the right and bottom sides so that
+    # insets and legends don't overlap data points.
+    pad = (
+        np.array(
+            [
+                obs_beam_centers[~obs_mask].separation(o).deg
+                for o in obs_beam_centers[obs_mask]
+            ]
+        )
+        .flatten()
+        .max()
+    )
+    x1, x2 = (
+        max(obs_beam_centers.ra.deg) + 0.3 * pad,
+        min(obs_beam_centers.ra.deg) - 1.5 * pad,
+    )
+    y1, y2 = (
+        min(obs_beam_centers.dec.deg) - pad,
+        max(obs_beam_centers.dec.deg) + 0.3 * pad,
+    )
+
+    bb_pix = wcs.world_to_pixel(
+        SkyCoord(
+            [x1, x2],
+            [y1, y2],
+            frame="icrs",
+            unit="deg",
+        )
+    )
+
+    # Customise the parent axis limits, labels and grids
+    ax1.set_xlim(bb_pix[0])
+    ax1.set_ylim(bb_pix[1])
+    ax1.set_xlabel("Right Ascension", fontsize=14, ha="center")
+    ax1.set_ylabel("Declination", fontsize=14, ha="center")
+    ax1.grid(ls=":")
     ax1.minorticks_on()
     ax1.tick_params(axis="both", which="major", labelsize=12)
-    ax1.tick_params(axis="both", which="both", direction="out", right=True, top=True)
+    ax1.tick_params(axis="both", which="both", direction="out")
 
     return fig
 
@@ -592,6 +555,7 @@ def localise(
     truth_coords: SkyCoord | None = None,
     window: str | None = None,
     loc_plot_lims: list | str | None = "zoom",
+    wcs=None,
 ) -> tuple[Figure, Figure]:
     """Execute the localisation procedure.
 
@@ -632,5 +596,6 @@ def localise(
         window=window,
         show_bestfit_loc=True,
         locfig_lims=loc_plot_lims,
+        wcs=wcs,
     )
     return localization_fig, cov_fig
