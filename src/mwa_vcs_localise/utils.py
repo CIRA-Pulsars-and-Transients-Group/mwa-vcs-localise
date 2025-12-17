@@ -186,9 +186,8 @@ def plot_array_layout(
     )
     tile_flags = np.array([rf.flagged for rf in context.rf_inputs if rf.pol == Pol.X])
 
-    char_baseline, max_baseline, hdi_baseline, _ = find_characteristic_baseline(context)
+    _, max_baseline, hdi_baseline, _ = find_characteristic_baseline(context)
     eff_baseline = np.max(hdi_baseline) * u.m
-    # eff_b, _, max_b, _ = find_characteristic_baseline(context)
 
     okay_tiles_n = np.ma.masked_array(tile_positions[:, 1], mask=tile_flags)
     okay_tiles_e = np.ma.masked_array(tile_positions[:, 0], mask=tile_flags)
@@ -293,6 +292,7 @@ def plot_primary_beam(
     gra: np.ndarray,
     gdec: np.ndarray,
     levels: list,
+    wcs: WCS | None,
     target: SkyCoord | None = None,
 ) -> None:
     """Plot the primary beam response across the gridded sky area.
@@ -304,36 +304,28 @@ def plot_primary_beam(
         gra (np.ndarray): The 2-D mesh grid in R.A. that defines the sky area of interest.
         gdec (np.ndarray): The 2-D mesh grid in Dec. that defines the sky area of interest.
         levels (list): Contour levels to plot, in units of primary beam power (0-1).
+        wcs: (WCS | None): The astropy WCS object defining the world coordinate system.
         target (SkyCoord | None, optional): A target position to highlight, if desired. Defaults to None.
     """
 
-    map_extent = [
-        gra.min(),
-        gra.max(),
-        gdec.min(),
-        gdec.max(),
-    ]
-
-    fig = plt.figure(figsize=(8, 6))
-    ax = fig.add_subplot()
+    fig = plt.figure(figsize=(8, 6), constrained_layout=True)
+    ax = fig.add_subplot(1, 1, 1, projection=wcs)
     pb_map = ax.imshow(
         pb,
         aspect="auto",
         interpolation="none",
-        extent=map_extent,
         cmap=cm.cosmic_r,
         norm="log",
         vmin=min(levels),
         vmax=max(levels),
     )
     pb_ctr = ax.contour(
-        gra,
-        gdec,
         pb,
         levels=levels[1:-1],
         cmap="plasma",
         norm="log",
     )
+
     if target:
         ax.scatter(
             target.ra.deg,
@@ -342,9 +334,10 @@ def plot_primary_beam(
             marker="x",
             zorder=100,
         )
-    ax.set_xlabel("Right Ascension (deg)", fontsize=14)
-    ax.set_ylabel("Declination (deg)", fontsize=14)
+    ax.set_xlabel("Right Ascension", fontsize=14)
+    ax.set_ylabel("Declination", fontsize=14)
     ax.tick_params(labelsize=12)
+    ax.grid(ls=":")
 
     cbar = plt.colorbar(
         pb_map,
@@ -366,6 +359,7 @@ def plot_tied_array_beam(
     gra: np.ndarray,
     gdec: np.ndarray,
     levels: list,
+    wcs: WCS | None,
     label: str | None = None,
     oname_suffix: str | None = None,
 ) -> None:
@@ -378,43 +372,38 @@ def plot_tied_array_beam(
         gra (np.ndarray): The 2-D mesh grid in R.A. that defines the sky area of interest.
         gdec (np.ndarray): The 2-D mesh grid in Dec. that defines the sky area of interest.
         levels (list): Contour levels to plot, in units of tied-array beam power (0-1).
+        wcs: (WCS | None): The astropy WCS object defining the world coordinate system.
         label (str | None, optional): Label to describe the colorbar. Defaults to None (i.e., no label).
         oname_suffix (str | None, optional): A suffix to append to the end of the saved figure file.
             Defaults to None (i.e., figure named f"{context.obsid}_tiedarray_beam.png").
     """
 
-    map_extent = [
-        gra.min(),
-        gra.max(),
-        gdec.min(),
-        gdec.max(),
-    ]
+    fig = plt.figure(figsize=(8, 6), constrained_layout=True)
+    ax = fig.add_subplot(1, 1, 1, projection=wcs)
 
-    fig = plt.figure(figsize=(8, 6))
-    ax = fig.add_subplot()
     tab_map = ax.imshow(
         tab.mean(axis=1)[0],
         aspect="auto",
         interpolation="none",
         origin="lower",
-        extent=map_extent,
         cmap=cm.sapphire_r,
         norm="log",
         vmin=min(levels),
         vmax=max(levels),
     )
+
     for ld in tab.mean(axis=1):
         tab_ctr = ax.contour(
-            gra,
-            gdec,
             ld,
             levels=levels[1:-1],
             cmap="plasma",
             norm="log",
         )
-    ax.set_xlabel("Right Ascension (deg)", fontsize=14)
-    ax.set_ylabel("Declination (deg)", fontsize=14)
+
+    ax.set_xlabel("Right Ascension", fontsize=14)
+    ax.set_ylabel("Declination", fontsize=14)
     ax.tick_params(labelsize=12)
+    ax.grid(ls=":")
 
     tab_map.cmap.set_under("white")
     cbar = plt.colorbar(
@@ -434,80 +423,3 @@ def plot_tied_array_beam(
         oname_base += oname_suffix
 
     plt.savefig(f"{oname_base}.png", dpi=200, bbox_inches="tight")
-
-
-def __plot_tab_centres_and_contours(
-    beam_cen_coords,
-    tabp,
-    grid_ra,
-    grid_dec,
-    label,
-    contours=True,
-) -> None:
-    """
-    Making a plot of the beam and contours for looks, with the beam
-    centres marked. Mostly for debugging.
-    """
-
-    tabp_sum = np.sum(tabp, axis=0)
-
-    map_extent = [grid_ra.min(), grid_ra.max(), grid_dec.min(), grid_dec.max()]
-
-    aspect = "equal"
-
-    cmap = cm.get_sub_cmap(cm.cosmic, 0.1, 0.9)
-    cmap.set_bad("red")
-    contour_cmap = cm.get_sub_cmap(cm.cosmic_r, 0.1, 0.9)
-    cmapnorm_sum = colors.Normalize(vmin=1e-5, vmax=0.1, clip=True)
-    cmapnorm_indiv = colors.Normalize(vmin=1e-5, vmax=0.05, clip=True)
-
-    fig = plt.figure(figsize=(10, 10))
-    ax1 = fig.add_subplot(1, 1, 1)
-    ax1_img = ax1.imshow(
-        tabp_sum, aspect=aspect, extent=map_extent, cmap=cmap, norm=cmapnorm_sum
-    )
-
-    ax1.plot(
-        beam_cen_coords.ra.deg,
-        beam_cen_coords.dec.deg,
-        "Dy",
-        mec="k",
-        ms=5,
-        label="Beam centers",
-    )
-
-    if contours:
-        for ls, look in enumerate(tabp):
-            ax1.contour(
-                look,
-                origin="image",
-                extent=map_extent,
-                cmap=contour_cmap,
-                norm=cmapnorm_indiv,
-                linewidths=0.5,
-            )
-
-    ax1.legend(fontsize=18, loc=2)
-    ax1.set_xlabel("R.A. (ICRS)", fontsize=18, ha="center")
-    ax1.set_ylabel("Dec. (ICRS)", fontsize=18, ha="center")
-    ax1.minorticks_on()
-    ax1.tick_params(axis="both", which="major", labelsize=18)
-    ax1.tick_params(axis="both", which="major", length=9)
-    ax1.tick_params(axis="both", which="minor", length=4.5)
-    ax1.tick_params(axis="both", which="both", direction="out", right=True, top=True)
-
-    cbar = fig.colorbar(
-        ax1_img,
-        ax=fig.axes,
-        shrink=1,
-        orientation="horizontal",
-        location="top",
-        aspect=30,
-        pad=0.02,
-    )
-    cbar.ax.set_title(label, fontsize=18, ha="center")
-    cbar.ax.xaxis.set_ticks_position("top")
-    cbar.ax.tick_params(direction="in", length=5, bottom=True, top=True)
-    cbar.ax.xaxis.set_tick_params(labelsize=18)
-
-    plt.savefig("tabs_with_centres.png", bbox_inches="tight")
