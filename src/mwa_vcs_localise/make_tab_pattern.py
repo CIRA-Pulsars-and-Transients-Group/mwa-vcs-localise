@@ -79,7 +79,22 @@ def main():
     parser.add_argument(
         "--use_wcs",
         action="store_true",
-        help="Use a WCS approach to define a grid around the central point.",
+        help="Use WCS to define a grid around the central point.",
+    )
+    parser.add_argument(
+        "--wcs_grid_size",
+        help="""The WCS grid size, in pixels, the be created. The centre of the grid
+          is either the provided 'look-direction' (-L option) or the first entry 
+          in the provided detection file (--detfile option).""",
+        nargs=2,
+        type=int,
+        default=(1024, 1024),
+    )
+    parser.add_argument(
+        "--wcs_pixel_size",
+        help="""The size of each pixel in the WCS grid, in arcseconds""",
+        type=float,
+        default=10.0,
     )
     parser.add_argument(
         "--nopb",
@@ -252,8 +267,13 @@ def main():
     elif args.use_wcs:
         print("Generating a WCS grid around the central localisation position...")
         print(f"   {look_positions[0].to_string('hmsdms', sep=':', precision=2)}")
+        print(
+            f"Grid shape = {args.wcs_grid_size}  Pixel scale = {args.wcs_pixel_size} arcsec"
+        )
         grid_ra, grid_dec, wcs = generate_wcs_grid(
-            look_positions[0], arcsec_per_pixel=10.0, image_size=300
+            look_positions[0],
+            arcsec_per_pixel=args.wcs_pixel_size,
+            image_size=args.wcs_grid_size,
         )
         target_positions = SkyCoord(
             grid_ra,
@@ -311,6 +331,7 @@ def main():
             grid_ra,
             grid_dec,
             [0.05, 0.1, 0.25, 0.5, 0.8, 1],
+            wcs,
             target=look_positions[0],
         )
 
@@ -379,8 +400,9 @@ def main():
             grid_ra,
             grid_dec,
             ctr_levels,
-            tab_cbar_label,
-            oname_suffix,
+            wcs,
+            label=tab_cbar_label,
+            oname_suffix=oname_suffix,
         )
 
     tt1 = timer.time()
@@ -402,10 +424,10 @@ def main():
                 tabp_look,
                 grid_ra,
                 grid_dec,
+                wcs,
                 truth_coords=true_coords,
                 window=regularisation_fn,
                 loc_plot_lims=loc_fig_lims,
-                wcs=wcs,
             )
             loc.savefig("localisation.png", dpi=200)
             cov.savefig("covariance.png", dpi=200)
