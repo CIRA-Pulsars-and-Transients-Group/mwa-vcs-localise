@@ -13,6 +13,7 @@ from scipy.ndimage import label
 # Astropy
 from astropy.coordinates import SkyCoord
 from astropy.table import Table
+from astropy.wcs import WCS
 
 # For visualization
 from matplotlib.figure import Figure
@@ -91,9 +92,15 @@ def covariance_estimation(
     fig = plt.figure(figsize=(20, 10))
     if plot_cov:
         cmap = cm.get_sub_cmap(cm.guppy, 0.0, 1.0)
-
+        vlim = max([np.abs(covariance.min()), covariance.max()])
         ax1 = fig.add_subplot(1, 1, 1)
-        ax1_img = ax1.imshow(covariance, cmap=cmap, vmin=-1, vmax=1, aspect="auto")
+        ax1_img = ax1.imshow(
+            covariance,
+            cmap=cmap,
+            vmin=-vlim,
+            vmax=vlim,
+            aspect="auto",
+        )
         i_maxsnr = np.argmax(obs_snr) + 1
         beam_pair_labels = np.array(
             [f"{obs_i+1}/{i_maxsnr}" for obs_i, obs_snr in enumerate(obs_snr)]
@@ -257,14 +264,13 @@ def localise_and_plot(
     chi2: np.ndarray,
     grid_ra: np.ndarray,
     grid_dec: np.ndarray,
+    wcs: WCS | None,
     obs_beam_centers: SkyCoord,
     obs_beam_snrs: np.ndarray,
     obs_mask: np.ndarray,
     truth_coords: SkyCoord | None = None,
     window: str | None = None,
     show_bestfit_loc: bool = True,
-    locfig_lims: str | list | None = None,
-    wcs=None,
 ) -> Figure:
     """Generate the localisation maps, identify peaks and uncertainties.
     Plot the results and report the best position identified with a
@@ -275,6 +281,7 @@ def localise_and_plot(
         chi2 (np.ndarray): A 2D chi-square map encoding the localisation probabilities.
         grid_ra (np.ndarray): The 2-D mesh grid in R.A. that defines the probability map coordinate.
         grid_dec (np.ndarray): The 2-D mesh grid in Dec. that defines the probability map coordinate.
+        wcs: (WCS | None): The astropy WCS object defining the world coordinate system.
         obs_beam_centers (SkyCoord): The TAB centre coordinates.
         obs_beam_snrs (np.ndarray): Observed detection metric (i.e., snr) for each TAB.
         obs_mask (np.ndarray): The mask which identifies which TABs are of interest.
@@ -291,7 +298,6 @@ def localise_and_plot(
         Figure: The figure containing the localisation plot.
     """
 
-    map_extent = [grid_ra.min(), grid_ra.max(), grid_dec.min(), grid_dec.max()]
     aspect = "auto"
     origin = "lower"
     cmap = cm.sapphire_r
@@ -488,6 +494,9 @@ def localise_and_plot(
             transform=ax1_img_inset.get_transform("world"),
         )
 
+        best_true_sep = best_coord.separation(truth_coords)
+        print(f"Offset of truth from best-fit position: {best_true_sep.to('arcmin'):g}")
+
     # Collect and fix legend handles and labels
     ctr_h = ax1_ctr.legend_elements()[0]
     ctr_l = [f"${s}\sigma$" for s in sigma_levels]
@@ -516,7 +525,7 @@ def localise_and_plot(
     )
     x1, x2 = (
         max(obs_beam_centers.ra.deg) + 0.3 * pad,
-        min(obs_beam_centers.ra.deg) - 1.5 * pad,
+        min(obs_beam_centers.ra.deg) - 1.8 * pad,
     )
     y1, y2 = (
         min(obs_beam_centers.dec.deg) - pad,
@@ -550,12 +559,12 @@ def localise(
     tabp_look: np.ndarray,
     grid_ra: np.ndarray,
     grid_dec: np.ndarray,
+    wcs: WCS | None,
     cov_nsim: int = 10000,
     plot_cov: bool = True,
     truth_coords: SkyCoord | None = None,
     window: str | None = None,
     loc_plot_lims: list | str | None = "zoom",
-    wcs=None,
 ) -> tuple[Figure, Figure]:
     """Execute the localisation procedure.
 
@@ -564,6 +573,7 @@ def localise(
         tabp_look (np.ndarray): The array of TAB patters for each pointing in `detfile`
         grid_ra (np.ndarray): The 2-D mesh grid in R.A. that defines the probability map coordinate.
         grid_dec (np.ndarray): The 2-D mesh grid in Dec. that defines the probability map coordinate.
+        wcs: (WCS | None): The astropy WCS object defining the world coordinate system.
         cov_nsim (int, optional): How many random multivariate draws to make per TAB when estimating
             the covariance. Defaults to 10000.
         plot_cov (bool, optional): Whether to plot the covariance matrix. Defaults to True.
@@ -589,13 +599,12 @@ def localise(
         chi2,
         grid_ra,
         grid_dec,
+        wcs,
         obs_beam_centers,
         obs_snr,
         obs_mask,
         truth_coords=truth_coords,
         window=window,
         show_bestfit_loc=True,
-        locfig_lims=loc_plot_lims,
-        wcs=wcs,
     )
     return localization_fig, cov_fig
