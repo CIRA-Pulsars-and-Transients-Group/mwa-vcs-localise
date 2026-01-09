@@ -124,7 +124,7 @@ def main():
     parser.add_argument(
         "--zoom",
         help="Create a figure inset zoomed on best-fit region.",
-        action="store_true"
+        action="store_true",
     )
 
     args = parser.parse_args()
@@ -138,7 +138,6 @@ def main():
     else:
         regularisation_fn = args.regularise
     print(f"Regularisation function requested: {regularisation_fn}")
-
 
     tt0 = timer.time()
     print("Preparing metadata...")
@@ -371,7 +370,7 @@ def main():
                 wcs,
                 truth_coords=true_coords,
                 window=regularisation_fn,
-                zoom=args.zoom
+                zoom=args.zoom,
             )
             loc.savefig("localisation.png", dpi=200)
             cov.savefig("covariance.png", dpi=200)

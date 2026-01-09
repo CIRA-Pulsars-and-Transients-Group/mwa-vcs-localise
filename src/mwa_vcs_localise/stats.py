@@ -532,7 +532,6 @@ def localise_and_plot(
         loc="lower right",
     )
 
-
     # Padding around the centre of the island in the parent axis
     # with addition padding on the right and bottom sides so that
     # insets and legends don't overlap data points.
@@ -588,7 +587,7 @@ def localise(
     plot_cov: bool = True,
     truth_coords: SkyCoord | None = None,
     window: str | None = None,
-    zoom: bool = True
+    zoom: bool = True,
 ) -> tuple[Figure, Figure]:
     """Execute the localisation procedure.
 
@@ -629,6 +628,6 @@ def localise(
         truth_coords=truth_coords,
         window=window,
         show_bestfit_loc=True,
-        zoom=zoom
+        zoom=zoom,
     )
     return localization_fig, cov_fig
