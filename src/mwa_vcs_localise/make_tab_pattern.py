@@ -68,15 +68,6 @@ def main():
         default=None,
     )
     parser.add_argument(
-        "--gridbox",
-        type=str,
-        help="""Coordinates (RA/Dec) defining the box to sample. 
-        Format is a single string as follows: 'RA0 Dec0 RA1 Dec1 RAstep Decstep' in h:m:s d:m:s,
-        where (RA0, Dec0) is one corner and (RA1, Dec1) is the opposite corner, and '*step' 
-        is the grid pixel size in arcsec.""",
-        default=None,
-    )
-    parser.add_argument(
         "--use_wcs",
         action="store_true",
         help="Use WCS to define a grid around the central point.",
@@ -84,7 +75,7 @@ def main():
     parser.add_argument(
         "--wcs_grid_size",
         help="""The WCS grid size, in pixels, the be created. The centre of the grid
-          is either the provided 'look-direction' (-L option) or the first entry 
+          is either the provided 'look-direction' (-L option) or the first entry
           in the provided detection file (--detfile option).""",
         nargs=2,
         type=int,
@@ -99,28 +90,28 @@ def main():
     parser.add_argument(
         "--nopb",
         action="store_true",
-        help="Don't include the primary beam attenuation.",
+        help="DO NOT include the primary beam attenuation.",
     )
     parser.add_argument(
         "--plot",
         action="store_true",
-        help="Whether to produce plots of beam patterns.",
+        help="Produce diagnostic and result plots. Otherwise, just text is printed to stdout.",
     )
     parser.add_argument(
         "--localise",
         action="store_true",
-        help="Actually do the localisation and report results.",
+        help="Localise and report results.",
     )
     parser.add_argument(
         "--detfile",
         type=str,
-        help="Path to a CSV, at least containing columns labeled as ra, dec, snr",
+        help="Path to a CSV containing the header 'ra,dec,snr' and corresponding rows per detection.",
         default=None,
     )
     parser.add_argument(
         "--truth",
         type=str,
-        help="Known true position of the target source (format: 'hh:mm:ss_dd:mm:ss').",
+        help="Known true position of the target source (format: 'hh:mm:ss ±dd:mm:ss').",
         default=None,
     )
     parser.add_argument(
@@ -131,12 +122,9 @@ def main():
         default="tab",
     )
     parser.add_argument(
-        "--loc_fig_lims",
-        type=str,
-        help="A set of 4 numbers describing the x- and y-limits to plot in the localisation figure. "
-        "May also be 'zoom' which will automatically pick an sensible range for plotting. "
-        "Expected format: 'x0 x1 y0 y1'.",
-        default="zoom",
+        "--zoom",
+        help="Create a figure inset zoomed on best-fit region.",
+        action="store_true"
     )
 
     args = parser.parse_args()
@@ -145,20 +133,12 @@ def main():
         exit(1)
     freqs = np.array([f for f in args.freq]) * u.Hz
 
-    if args.gridbox:
-        grid_box = args.gridbox.split(" ")[:-2]
-        grid_step = args.gridbox.split(" ")[-2:]
-
     if args.regularise == "none":
         regularisation_fn = None
     else:
         regularisation_fn = args.regularise
     print(f"Regularisation function requested: {regularisation_fn}")
 
-    if args.loc_fig_lims != "zoom":
-        loc_fig_lims = [float(x) for x in args.loc_fig_lims.split(" ")]
-    else:
-        loc_fig_lims = "zoom"
 
     tt0 = timer.time()
     print("Preparing metadata...")
@@ -227,49 +207,13 @@ def main():
     print(
         "Creating sky position vectors from highest frequency and first look-direction..."
     )
-    if not args.position and args.gridbox:
-        box = SkyCoord(
-            [grid_box[0], grid_box[2]],
-            [grid_box[1], grid_box[3]],
-            frame="icrs",
-            unit=("hourangle", "deg"),
-        )
-        grid_step_ra = grid_step[0] * u.arcsec
-        grid_step_dec = grid_step[1] * u.arcsec
-        spherical_offset = box[0].spherical_offsets_to(box[1])
-        n_ra = int(np.abs(spherical_offset[0].to(u.arcsec) / grid_step_ra))
-        n_dec = int(np.abs(spherical_offset[1].to(u.arcsec) / grid_step_dec))
 
-        if box.ra[0] > 180 * u.deg:
-            print("... will wrap at RA = 0h such that grid spans -180 to +180 deg")
-            box_ra = box.ra.deg
-            box_ra[box_ra >= 180] -= 360
-            box_dec = box.dec.deg
-        else:
-            box_ra = box.ra.deg
-            box_dec = box.dec.deg
-
-        grid_ra, grid_dec = np.meshgrid(
-            np.linspace(box_ra[0], box_ra[1], n_ra),
-            np.linspace(box_dec[0], box_dec[1], n_dec),
-        )
-        print(f"... sky box limits = ra{box_ra} dec{box_dec}")
-        sky_area_sr = sky_area(box_ra, box_dec)
-        print(f"... sky area = {sky_area_sr} = {sky_area_sr.to(u.deg**2)}")
-
-        target_positions = SkyCoord(
-            grid_ra,
-            grid_dec,
-            frame="icrs",
-            unit=("deg", "deg"),
-        )
-        print(f"... target positions array shape, (nRA, nDec) = {n_ra, n_dec}")
-    elif args.use_wcs:
+    if args.use_wcs:
         print("Generating a WCS grid around the central localisation position...")
         print(f"   {look_positions[0].to_string('hmsdms', sep=':', precision=2)}")
-        print(
-            f"Grid shape = {args.wcs_grid_size}  Pixel scale = {args.wcs_pixel_size} arcsec"
-        )
+        print(f"Grid shape = {args.wcs_grid_size}")
+        print(f"Pixel scale = {args.wcs_pixel_size} arcsec")
+
         grid_ra, grid_dec, wcs = generate_wcs_grid(
             look_positions[0],
             arcsec_per_pixel=args.wcs_pixel_size,
@@ -427,7 +371,7 @@ def main():
                 wcs,
                 truth_coords=true_coords,
                 window=regularisation_fn,
-                loc_plot_lims=loc_fig_lims,
+                zoom=args.zoom
             )
             loc.savefig("localisation.png", dpi=200)
             cov.savefig("covariance.png", dpi=200)
