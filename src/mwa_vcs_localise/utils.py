@@ -55,7 +55,7 @@ def generate_wcs_grid(
         be used elsewhere to ensure consistent sky coordinate navigation and projections
     """
     # Set image size in pixels
-    if isinstance(image_size, tuple):
+    if isinstance(image_size, (tuple, list)):
         naxis1 = image_size[0]
         naxis2 = image_size[1]
     else:
