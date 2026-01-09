@@ -7,7 +7,9 @@ singlefreq=154240000
 detection_file="detections_0452.txt"
 
 # Get the metafits files from the MWA web service.
-wget "http://ws.mwatelescope.org/metadata/fits?obs_id=${obsid}" -O ${metafits}
+if [ ! -f ${metafits} ];then
+    wget "http://ws.mwatelescope.org/metadata/fits?obs_id=${obsid}" -O ${metafits}
+fi
 
 # Generate the localisation plot.
 mwa_tab_loc \
@@ -15,7 +17,8 @@ mwa_tab_loc \
     -f ${singlefreq} \
     -t ${obstime} \
     --detfile ${detection_file} \
-    --gridbox '04:40:30 -36:30:00 05:00:00 -32:00:00 10 10' \
+    --use_wcs --wcs_pixel_size 5 \
+    --zoom \
     --plot \
     --localise \
     --truth '04:52:00.7 -34:18:42.0'

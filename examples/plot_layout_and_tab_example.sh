@@ -8,7 +8,9 @@ singlefreq=154000000
 
 
 # Get the metafits files from the MWA web service.
-wget "http://ws.mwatelescope.org/metadata/fits?obs_id=${obsid}" -O ${metafits}
+if [ ! -f ${metafits} ];then
+    wget "http://ws.mwatelescope.org/metadata/fits?obs_id=${obsid}" -O ${metafits}
+fi
 
 
 # Paper Figure 1 (array layout and baseline distribution) & Figure 2 (zoom of central and first sidelobes of tied-array beam) WITHOUT primary beam effects
@@ -17,7 +19,7 @@ mwa_tab_loc \
     -f ${singlefreq} \
     -t "${obstime}" \
     -L "${lookdir}" \
-    --gridbox "02:50:00 -56:40:00 03:10:00 -53:20:00 10 10" \
+    --use_wcs --wcs_pixel_size 10 \
     --nopb \
     --plot
 
@@ -29,7 +31,7 @@ mwa_tab_loc \
     -f ${singlefreq} \
     -t "${obstime}" \
     -L "${lookdir}" \
-    --gridbox "02:50:00 -56:40:00 03:10:00 -53:20:00 10 10" \
+    --use_wcs --wcs_pixel_size 10 \
     --plot
 
 mv ${obsid}_tiedarray_beam_pb.png ${obsid}_tiedarray_beam_pb_zoom.png
