@@ -18,7 +18,6 @@ from mwalib import MetafitsContext, Pol
 import arviz as az
 from arviz.plots.plot_utils import calculate_point_estimate
 
-
 # Plotting style/formats
 plt.rcParams.update(
     {
