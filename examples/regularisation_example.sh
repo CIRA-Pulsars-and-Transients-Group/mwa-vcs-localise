@@ -7,21 +7,22 @@ singlefreq=154240000
 detection_file="initial_detections_0026.txt"
 
 # Get the metafits files from the MWA web service.
-wget "http://ws.mwatelescope.org/metadata/fits?obs_id=${obsid}" -O ${metafits}
+if [ ! -f $metafits ];then
+    wget "http://ws.mwatelescope.org/metadata/fits?obs_id=${obsid}" -O ${metafits}
+fi
 
-# Regenerate almost identical subfigures as in Appendix Figure 1.
+# Regenerate subfigures as in Appendix Figure 1.
 for reg in none gaussian tab;do
     mwa_tab_loc \
         -m ${metafits} \
         -f ${singlefreq} \
         -t ${obstime} \
         --detfile ${detection_file} \
-        --gridbox '00:08:00 -21:30:00 00:37:00 -18:30:00 10 10' \
+        --use_wcs --wcs_pixel_size 5 --wcs_grid_size 1536 1536 \
         --plot \
         --localise \
         --regularise ${reg} \
-        --truth '00:26:36.3 -19:55:59.3' \
-        --loc_fig_lims "5 7 -20.5 -18.5"
+        --truth '00:26:36.3 -19:55:59.3'
     
     mv localisation.png init_localisation_0026.${reg}.png
 done

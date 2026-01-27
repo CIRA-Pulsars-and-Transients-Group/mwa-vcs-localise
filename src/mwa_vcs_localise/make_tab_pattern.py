@@ -9,8 +9,8 @@ import mwalib
 import numpy as np
 from astropy.coordinates import SkyCoord, AltAz
 from astropy.time import Time
-from astropy.constants import c as sol
 import astropy.units as u
+import astropy.constants as c
 from .utils import (
     MWA_LOCATION,
     sky_area,
@@ -19,6 +19,7 @@ from .utils import (
     plot_baseline_distribution,
     plot_primary_beam,
     plot_tied_array_beam,
+    generate_wcs_grid,
 )
 from .array_factor import (
     extract_working_tile_positions,
@@ -67,39 +68,50 @@ def main():
         default=None,
     )
     parser.add_argument(
-        "--gridbox",
-        type=str,
-        help="""Coordinates (RA/Dec) defining the box to sample. 
-        Format is a single string as follows: 'RA0 Dec0 RA1 Dec1 RAstep Decstep' in h:m:s d:m:s,
-        where (RA0, Dec0) is one corner and (RA1, Dec1) is the opposite corner, and '*step' 
-        is the grid pixel size in arcsec.""",
-        default=None,
+        "--use_wcs",
+        action="store_true",
+        help="Use WCS to define a grid around the central point.",
+    )
+    parser.add_argument(
+        "--wcs_grid_size",
+        help="""The WCS grid size, in pixels, the be created. The centre of the grid
+          is either the provided 'look-direction' (-L option) or the first entry
+          in the provided detection file (--detfile option).""",
+        nargs=2,
+        type=int,
+        default=(1024, 1024),
+    )
+    parser.add_argument(
+        "--wcs_pixel_size",
+        help="""The size of each pixel in the WCS grid, in arcseconds""",
+        type=float,
+        default=10.0,
     )
     parser.add_argument(
         "--nopb",
         action="store_true",
-        help="Don't include the primary beam attenuation.",
+        help="DO NOT include the primary beam attenuation.",
     )
     parser.add_argument(
         "--plot",
         action="store_true",
-        help="Whether to produce plots of beam patterns.",
+        help="Produce diagnostic and result plots. Otherwise, just text is printed to stdout.",
     )
     parser.add_argument(
         "--localise",
         action="store_true",
-        help="Actually do the localisation and report results.",
+        help="Localise and report results.",
     )
     parser.add_argument(
         "--detfile",
         type=str,
-        help="Path to a CSV, at least containing columns labeled as ra, dec, snr",
+        help="Path to a CSV containing the header 'ra,dec,snr' and corresponding rows per detection.",
         default=None,
     )
     parser.add_argument(
         "--truth",
         type=str,
-        help="Known true position of the target source (format: 'hh:mm:ss_dd:mm:ss').",
+        help="Known true position of the target source (format: 'hh:mm:ss ±dd:mm:ss').",
         default=None,
     )
     parser.add_argument(
@@ -110,22 +122,16 @@ def main():
         default="tab",
     )
     parser.add_argument(
-        "--loc_fig_lims",
-        type=str,
-        help="A set of 4 numbers describing the x- and y-limits to plot in the localisation figure. "
-        "May also be 'zoom' which will automatically pick an sensible range for plotting. "
-        "Expected format: 'x0 x1 y0 y1'.",
-        default="zoom",
+        "--zoom",
+        help="Create a figure inset zoomed on best-fit region.",
+        action="store_true",
     )
 
     args = parser.parse_args()
     if len(args.freq) > 10:
         print("Cannot use more than 10 frequencies at a time, please adjust input.")
         exit(1)
-    freqs = np.array(args.freq)
-    if args.gridbox:
-        grid_box = args.gridbox.split(" ")[:-2]
-        grid_step = args.gridbox.split(" ")[-2:]
+    freqs = np.array([f for f in args.freq]) * u.Hz
 
     if args.regularise == "none":
         regularisation_fn = None
@@ -133,38 +139,31 @@ def main():
         regularisation_fn = args.regularise
     print(f"Regularisation function requested: {regularisation_fn}")
 
-    if args.loc_fig_lims != "zoom":
-        loc_fig_lims = [float(x) for x in args.loc_fig_lims.split(" ")]
-    else:
-        loc_fig_lims = "zoom"
-
     tt0 = timer.time()
     print("Preparing metadata...")
     # Collect meta information and setup configuration.
     context = mwalib.MetafitsContext(args.metafits)
 
     # Examine the array layout, collect tile positions and baseline information
-    density_interval_prob = 0.75
-    eff_max_baseline, b_intervals, max_baseline, baselines = (
-        find_characteristic_baseline(
-            context,
-            hdi_prob=density_interval_prob,
-        )
+    density_interval_prob = 0.90
+    char_baseline, max_baseline, hdi_baseline, baselines = find_characteristic_baseline(
+        context,
+        hdi_prob=density_interval_prob,
     )
+    eff_baseline = np.max(hdi_baseline) * u.m
     tile_positions, num_good, num_flagged = extract_working_tile_positions(context)
     num_tiles = num_good + num_flagged
     print(f"... number of tiles: {num_tiles}")
     print(f"... number of unflagged tiles: {num_good}")
     print(f"... number of baselines: {len(baselines)}")
-    print(f"... maximum baseline, D_max (m): {max_baseline}")
-    print(f"... characteristic baseline (mode), D_eff (m): {eff_max_baseline}")
-    print(f"... {density_interval_prob*100}% of baselines are between:")
-    for hdi in b_intervals:
-        print(f"     {hdi}")
-    if b_intervals.size > 2:
-        print("     CAUTION: multi-modal distribution.")
-    width = ((sol.value / freqs) / eff_max_baseline) * u.rad
-    print(f"... beam width ~ lambda/D_eff (arcmin): {width.to(u.arcminute).value}")
+    print(f"Maximum baseline, Bmax = {max_baseline*u.m:g}")
+    print(f"Approx. mode of baselines = {char_baseline*u.m:g}")
+    print(f"Effective baseline, Beff = {eff_baseline:g}")
+    print(f"Centre frequencies:")
+    for freq in freqs:
+        print(f"f = {freq.to(u.MHz):g}  λ = {(c.c/freq).to(u.m):g}")
+    width = ((c.c / freqs) / eff_baseline) * u.rad
+    print(f"... beam width ~ λ/Beff: {width.to(u.arcminute)}")
 
     # Define reference frame and time
     time = Time(args.time, format="isot", scale="utc")
@@ -207,43 +206,24 @@ def main():
     print(
         "Creating sky position vectors from highest frequency and first look-direction..."
     )
-    if not args.position and args.gridbox:
-        box = SkyCoord(
-            [grid_box[0], grid_box[2]],
-            [grid_box[1], grid_box[3]],
-            frame="icrs",
-            unit=("hourangle", "deg"),
+
+    if args.use_wcs:
+        print("Generating a WCS grid around the central localisation position...")
+        print(f"   {look_positions[0].to_string('hmsdms', sep=':', precision=2)}")
+        print(f"Grid shape = {args.wcs_grid_size}")
+        print(f"Pixel scale = {args.wcs_pixel_size} arcsec")
+
+        grid_ra, grid_dec, wcs = generate_wcs_grid(
+            look_positions[0],
+            arcsec_per_pixel=args.wcs_pixel_size,
+            image_size=args.wcs_grid_size,
         )
-        grid_step_ra = grid_step[0] * u.arcsec
-        grid_step_dec = grid_step[1] * u.arcsec
-        spherical_offset = box[0].spherical_offsets_to(box[1])
-        n_ra = int(np.abs(spherical_offset[0].to(u.arcsec) / grid_step_ra))
-        n_dec = int(np.abs(spherical_offset[1].to(u.arcsec) / grid_step_dec))
-
-        if box.ra[0] > 180 * u.deg:
-            print("... will wrap at RA = 0h such that grid spans -180 to +180 deg")
-            box_ra = box.ra.deg
-            box_ra[box_ra >= 180] -= 360
-            box_dec = box.dec.deg
-        else:
-            box_ra = box.ra.deg
-            box_dec = box.dec.deg
-
-        grid_ra, grid_dec = np.meshgrid(
-            np.linspace(box_ra[0], box_ra[1], n_ra),
-            np.linspace(box_dec[0], box_dec[1], n_dec),
-        )
-        print(f"... sky box limits = ra{box_ra} dec{box_dec}")
-        sky_area_sr = sky_area(box_ra, box_dec)
-        print(f"... sky area = {sky_area_sr} = {sky_area_sr.to(u.deg**2)}")
-
         target_positions = SkyCoord(
             grid_ra,
             grid_dec,
             frame="icrs",
             unit=("deg", "deg"),
         )
-        print(f"... target positions array shape, (nRA, nDec) = {n_ra, n_dec}")
     else:
         for p in args.position.split(" "):
             target_ras.append(p.split("_")[0])
@@ -271,11 +251,11 @@ def main():
             pbp_freq.append(None)
         else:
             # Compute the primary beam zenith-normalised power.
-            print(f"Computing primary beam power at frequency = {freq} Hz...")
+            print(f"Computing primary beam power at frequency = {freq}...")
             t0 = timer.time()
             pbp = get_primary_beam_power(
                 context,
-                freq,
+                freq.value,
                 target_positions_altaz.alt.rad,
                 target_positions_altaz.az.rad,
                 stokes="I",
@@ -294,6 +274,7 @@ def main():
             grid_ra,
             grid_dec,
             [0.05, 0.1, 0.25, 0.5, 0.8, 1],
+            wcs,
             target=look_positions[0],
         )
 
@@ -309,19 +290,19 @@ def main():
         tabp_freq = []
         afp_freq = []
         for j, freq in enumerate(freqs):
-            print(f"Processing tied-array beam at frequency = {freq} Hz")
+            print(f"Processing tied-array beam at frequency = {freq}")
             print("Computing array factors...")
             t0 = timer.time()
             # Compute the array factor (tied-array beam weighting factor).
             look_psi = calc_geometric_delays(
                 tile_positions,
-                freq,
+                freq.value,
                 lp.alt.rad,
                 lp.az.rad,
             )
             target_psi = calc_geometric_delays(
                 tile_positions,
-                freq,
+                freq.value,
                 target_positions_altaz.alt.rad,
                 target_positions_altaz.az.rad,
             )
@@ -362,8 +343,9 @@ def main():
             grid_ra,
             grid_dec,
             ctr_levels,
-            tab_cbar_label,
-            oname_suffix,
+            wcs,
+            label=tab_cbar_label,
+            oname_suffix=oname_suffix,
         )
 
     tt1 = timer.time()
@@ -385,9 +367,10 @@ def main():
                 tabp_look,
                 grid_ra,
                 grid_dec,
+                wcs,
                 truth_coords=true_coords,
                 window=regularisation_fn,
-                loc_plot_lims=loc_fig_lims,
+                zoom=args.zoom,
             )
             loc.savefig("localisation.png", dpi=200)
             cov.savefig("covariance.png", dpi=200)
