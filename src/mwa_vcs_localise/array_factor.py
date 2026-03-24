@@ -13,6 +13,7 @@ from .utils import MWA_CENTRE_CABLE_LEN
 
 def extract_working_tile_positions(
     metadata: MetafitsContext,
+    exclude_flagged: bool = True
 ) -> tuple[np.ndarray, int, int]:
     """Extract tile position information required for beamforming and/or
     computing the array factor quantity from a metafits structure.
@@ -23,6 +24,8 @@ def extract_working_tile_positions(
     Args:
         metadata (MetafitsContext): An MWALIB MetafitsContext structure
             containing the array layout information.
+        exclude_flagged (bool): Whether to remove flagged tiles from the
+            position list. Default: True.
 
     Returns:
         tuple[np.ndarray, int, int]: A tuple containing:
@@ -54,7 +57,11 @@ def extract_working_tile_positions(
     # Gather the flagged tile information from the metafits information
     # and remove those tiles from the above vector
     tile_flags = np.array([rf.flagged for rf in metadata.rf_inputs if rf.pol == Pol.X])
-    tile_positions = np.delete(tile_positions, np.where(tile_flags & True), axis=0)
+
+    if exclude_flagged:
+        tile_positions = np.delete(tile_positions, np.where(tile_flags & True), axis=0)
+    else:
+        print("Not removing flagged tiles from list.")
 
     num_ok_tiles = (~tile_flags).sum()
     num_bad_tiles = (tile_flags).sum()

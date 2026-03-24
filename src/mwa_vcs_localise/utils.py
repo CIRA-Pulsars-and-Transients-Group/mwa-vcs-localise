@@ -13,6 +13,7 @@ import numpy as np
 from scipy.spatial.distance import cdist
 from astropy.coordinates import EarthLocation, SkyCoord
 from astropy.wcs import WCS
+from astropy.visualization.wcsaxes import add_scalebar
 import astropy.units as u
 from mwalib import MetafitsContext, Pol
 import arviz as az
@@ -50,7 +51,7 @@ def generate_wcs_grid(
         image_size (int | tuple[int], optional): The image size, in pixels. Defaults to 1000.
 
     Returns:
-        tuple[np.ndarray, np.ndarray, WCS]: The grid in RA, Dec and the WCS object which can
+        7tuple[np.ndarray, np.ndarray, WCS]: The grid in RA, Dec and the WCS object which can
         be used elsewhere to ensure consistent sky coordinate navigation and projections
     """
     # Set image size in pixels
@@ -163,8 +164,9 @@ def find_characteristic_baseline(
 
 def plot_array_layout(
     context: MetafitsContext,
-    ew_limits: list = [-410, 410],
-    ns_limits: list = [50, 600],
+    ew_limits: list | None = None,
+    ns_limits: list | None = None,
+    show_flagged_tiles: bool = True
 ) -> None:
     """Plot the tile position layout.
 
@@ -172,9 +174,11 @@ def plot_array_layout(
         context (MetafitsContext): A mwalib.MetafitsContext object that contains the
             array configuration and delay settings.
         ew_limits (list, optional): The E-W limits, relative to the array centre
-            (in metres) to plot. Defaults to [-410, 410].
+            (in metres) to plot. Defaults to None.
         ns_limits (list, optional): The N-S limits, relative to the array centre
-            (in metres) to plot. Defaults to [50, 600].
+            (in metres) to plot. Defaults to None.
+        show_flagged_tiles (bool): Plot the flagged tiles in a different colour.
+            Default: True.
     """
     tile_positions = np.array(
         [
@@ -198,26 +202,41 @@ def plot_array_layout(
 
     fig = plt.figure(figsize=(8, 6))
     fig.add_subplot()
-    plt.scatter(
-        okay_tiles_e,
-        okay_tiles_n,
-        zorder=1000,
-        s=10,
-        marker="x",
-        color="k",
-        label=f"'Good' tiles ({num_ok_tiles})",
-    )
-    plt.scatter(
-        bad_tiles_e,
-        bad_tiles_n,
-        zorder=1000,
-        s=10,
-        marker="x",
-        color="r",
-        label=f"Flagged tiles ({num_bad_tiles})",
-    )
-    plt.xlim(ew_limits)
-    plt.ylim(ns_limits)
+
+    if show_flagged_tiles:
+        plt.scatter(
+            okay_tiles_e,
+            okay_tiles_n,
+            zorder=1000,
+            s=10,
+            marker="x",
+            color="k",
+            label=f"'Good' tiles ({num_ok_tiles})",
+        )
+        plt.scatter(
+            bad_tiles_e,
+            bad_tiles_n,
+            zorder=1000,
+            s=10,
+            marker="x",
+            color="r",
+            label=f"Flagged tiles ({num_bad_tiles})",
+        )
+    else:
+        plt.scatter(
+            tile_positions[:, 1],
+            tile_positions[:, 0],
+            zorder=1000,
+            s=10,
+            marker="x",
+            color="k",
+            label=f"All tiles ({len(tile_flags)})",
+        )
+
+    if ew_limits:
+        plt.xlim(ew_limits)
+    if ns_limits:
+        plt.ylim(ns_limits)
     plt.legend(fontsize=12)
     plt.xlabel("East coordinate from array centre (m)", fontsize=14)
     plt.ylabel("North coordiante from array centre (m)", fontsize=14)
@@ -359,6 +378,7 @@ def plot_tied_array_beam(
     gdec: np.ndarray,
     levels: list,
     wcs: WCS | None,
+    scale_arcmin: float | None = 1.0,
     label: str | None = None,
     oname_suffix: str | None = None,
 ) -> None:
@@ -372,6 +392,7 @@ def plot_tied_array_beam(
         gdec (np.ndarray): The 2-D mesh grid in Dec. that defines the sky area of interest.
         levels (list): Contour levels to plot, in units of tied-array beam power (0-1).
         wcs: (WCS | None): The astropy WCS object defining the world coordinate system.
+        scale_arcmin: (float | None): The scale, in arcmin, to show as a scale bar on the plot. Default is 1'.
         label (str | None, optional): Label to describe the colorbar. Defaults to None (i.e., no label).
         oname_suffix (str | None, optional): A suffix to append to the end of the saved figure file.
             Defaults to None (i.e., figure named f"{context.obsid}_tiedarray_beam.png").
@@ -401,8 +422,14 @@ def plot_tied_array_beam(
 
     ax.set_xlabel("Right Ascension", fontsize=14)
     ax.set_ylabel("Declination", fontsize=14)
+    ax.relim()
+    ax.autoscale_view()
     ax.tick_params(labelsize=12)
     ax.grid(ls=":")
+    
+    # Add a scale bar
+    if scale_arcmin:
+        add_scalebar(ax, scale_arcmin * u.arcmin, label=f"{scale_arcmin}'", color="black")
 
     tab_map.cmap.set_under("white")
     cbar = plt.colorbar(

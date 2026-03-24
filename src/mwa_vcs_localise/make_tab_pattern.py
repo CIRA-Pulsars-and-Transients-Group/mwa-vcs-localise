@@ -126,6 +126,11 @@ def main():
         help="Create a figure inset zoomed on best-fit region.",
         action="store_true",
     )
+    parser.add_argument(
+        "--no-tile-flags",
+        help="Do not remove flagged tile positions when generating tied-array beam pattern.",
+        action="store_true",
+    )
 
     args = parser.parse_args()
     if len(args.freq) > 10:
@@ -151,7 +156,10 @@ def main():
         hdi_prob=density_interval_prob,
     )
     eff_baseline = np.max(hdi_baseline) * u.m
-    tile_positions, num_good, num_flagged = extract_working_tile_positions(context)
+    tile_positions, num_good, num_flagged = extract_working_tile_positions(
+        context,
+        exclude_flagged=(not args.no_tile_flags)
+    )
     num_tiles = num_good + num_flagged
     print(f"... number of tiles: {num_tiles}")
     print(f"... number of unflagged tiles: {num_good}")
@@ -171,7 +179,7 @@ def main():
 
     if args.plot:
         print("Plotting array layout...")
-        plot_array_layout(context)
+        plot_array_layout(context, show_flagged_tiles=(not args.no_tile_flags))
         plot_baseline_distribution(context)
 
     # Create the astrometric quantity for the beamformed target direction
@@ -344,6 +352,7 @@ def main():
             grid_dec,
             ctr_levels,
             wcs,
+            scale_arcmin=round(width[0].to("arcmin").value, 1),
             label=tab_cbar_label,
             oname_suffix=oname_suffix,
         )
