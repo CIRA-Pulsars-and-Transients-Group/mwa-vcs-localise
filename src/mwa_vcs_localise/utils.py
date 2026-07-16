@@ -6,7 +6,6 @@
 
 import matplotlib.pyplot as plt
 import matplotlib.ticker as mticker
-import matplotlib.colors as colors
 import cmasher as cm
 
 import numpy as np
@@ -16,7 +15,7 @@ from astropy.wcs import WCS
 import astropy.units as u
 from mwalib import MetafitsContext, Pol
 import arviz as az
-from arviz.plots.plot_utils import calculate_point_estimate
+
 
 # Plotting style/formats
 plt.rcParams.update(
@@ -123,7 +122,7 @@ def sky_area(ra: np.ndarray, dec: np.ndarray) -> u.quantity:
 
 
 def find_characteristic_baseline(
-    context: MetafitsContext, hdi_prob: float = 0.9
+    context: MetafitsContext, hdi_prob: float = 0.9, extra_tile_flags: list[str] | None = None,
 ) -> tuple[float, np.ndarray, float, np.ndarray]:
     """From the observation metadata, compute the tile effective and
     maximum baselines, as well as the baseline distribution.
@@ -133,12 +132,13 @@ def find_characteristic_baseline(
             array configuration and delay settings.
         hdi_prob (float, optional): Fraction of baselines to be included for the
             highest-density interval. Defaults to 0.9.
-
+        extra_tile_flags (list[str] | None, optional): A list of additional
+        tile names to flag as bad. Defaults to None.
     Returns:
-        tuple[float, np.ndarray, float, np.ndarray]: A tuple containing:
-            (1) The effective (modal) baseline,
-            (2) The highest-density interval,
-            (3) The maximum baseline, and
+        tuple[float, float, np.ndarray, np.ndarray]: A tuple containing:
+            (1) The baseline mode (i.e., the most common baseline length),
+            (2) The maximum baseline,
+            (3) The highest-density interval, and
             (4) The baseline distribution.
     """
     tile_positions = np.array(
@@ -149,16 +149,28 @@ def find_characteristic_baseline(
         ]
     )
     tile_flags = np.array([rf.flagged for rf in context.rf_inputs if rf.pol == Pol.X])
+    if extra_tile_flags is not None:
+        itile = 0
+        for rf in context.rf_inputs:
+            if rf.pol != Pol.X:
+                continue
+            if rf.tile_name in extra_tile_flags or str(rf.tile_id) in extra_tile_flags:
+                tile_flags[itile] = True
+            itile += 1
+
     tile_positions = np.delete(tile_positions, np.where(tile_flags & True), axis=0)
 
     dist = cdist(tile_positions, tile_positions)
     dist = np.delete(dist.flatten(), np.where(dist.flatten() <= 0.01))  # remove autos
+    max_dist = np.max(dist) * u.m
+    distances = dist * u.m
 
     # use a KDE approach to estimate the mode of the baseline distribution
-    dist_mode = calculate_point_estimate("mode", dist)
-    dist_hdi = az.hdi(dist, hdi_prob=hdi_prob, multimodal=False)
+    grid, density = az.kde(dist)
+    dist_mode = grid[np.argmax(density)] * u.m
+    dist_hdi = np.asarray(az.hdi(dist, hdi_prob=hdi_prob, multimodal=False)) * u.m
 
-    return dist_mode, max(dist), dist_hdi, dist
+    return dist_mode, max_dist, dist_hdi, distances
 
 
 def plot_array_layout(
@@ -234,17 +246,28 @@ def plot_array_layout(
     plt.close(fig)
 
 
-def plot_baseline_distribution(context: MetafitsContext) -> None:
+def plot_baseline_distribution(context: MetafitsContext, extra_tile_flags: list[str] | None = None) -> None:
     """Plot the baseline distribution and indicate the highest-density interval(s).
 
     Args:
         context (MetafitsContext): A mwalib.MetafitsContext object that contains the
             array configuration and delay settings.
+        extra_tile_flags (list[str] | None, optional): A list of additional
+            tile names to flag as bad. Defaults to None.
     """
-    _, max_baseline, hdi_baseline, baselines = find_characteristic_baseline(context)
-    eff_baseline = np.max(hdi_baseline) * u.m
+    _, max_baseline, hdi_baseline, baselines = find_characteristic_baseline(context, extra_tile_flags=extra_tile_flags)
+    eff_baseline = np.max(hdi_baseline)
 
     tile_flags = np.array([rf.flagged for rf in context.rf_inputs if rf.pol == Pol.X])
+    if extra_tile_flags is not None:
+        itile = 0
+        for rf in context.rf_inputs:
+            if rf.pol != Pol.X:
+                continue
+            if rf.tile_name in extra_tile_flags or str(rf.tile_id) in extra_tile_flags:
+                tile_flags[itile] = True
+            itile += 1
+
     num_ok_tiles = (~tile_flags).sum()
     num_bad_tiles = (tile_flags).sum()
 
