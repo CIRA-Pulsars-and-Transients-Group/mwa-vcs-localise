@@ -157,7 +157,7 @@ def main():
         hdi_prob=density_interval_prob,
         extra_tile_flags=args.tile_flags,
     )
-    eff_baseline = np.max(hdi_baseline) * u.m
+    eff_baseline = np.max(hdi_baseline)
     tile_positions, num_good, num_flagged = extract_working_tile_positions(
         context,
         extra_tile_flags=args.tile_flags,
@@ -166,13 +166,13 @@ def main():
     print(f"... number of tiles: {num_tiles}")
     print(f"... number of unflagged tiles: {num_good}")
     print(f"... number of baselines: {len(baselines)}")
-    print(f"Maximum baseline, Bmax = {max_baseline*u.m:g}")
-    print(f"Approx. mode of baselines = {char_baseline*u.m:g}")
+    print(f"Maximum baseline, Bmax = {max_baseline:g}")
+    print(f"Approx. mode of baselines = {char_baseline:g}")
     print(f"Effective baseline, Beff = {eff_baseline:g}")
     print("Centre frequencies:")
     for freq in freqs:
         print(f"f = {freq.to(u.MHz):g}  λ = {(c.c/freq).to(u.m):g}")
-    width = ((c.c / freqs) / eff_baseline) * u.rad
+    width = (1 * u.rad * (c.c / freqs) / eff_baseline).decompose()
     print(f"... beam width ~ λ/Beff: {width.to(u.arcminute)}")
 
     # Define reference frame and time
