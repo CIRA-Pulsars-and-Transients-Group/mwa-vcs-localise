@@ -273,14 +273,20 @@ def plot_baseline_distribution(context: MetafitsContext, extra_tile_flags: list[
 
     fig = plt.figure(figsize=(8, 6))
     ax = fig.add_subplot()
-    ax.hist(baselines, bins=np.arange(0, max_baseline, 10))
+    ax.hist([b.value for b in baselines], bins=np.arange(0, max_baseline.value, 10))
     ymax = max(ax.get_ylim())
 
     if len(np.shape(hdi_baseline)) > 1:
         for i in list(hdi_baseline):
-            ax.fill_between(i, 0, ymax, color="0.8", alpha=0.5)
+            ax.fill_between(i.value, 0, ymax, color="0.8", alpha=0.5)
     else:
-        ax.fill_between(hdi_baseline, 0, ymax, color="0.8", alpha=0.5)
+        ax.fill_between(
+            [h.value for h in hdi_baseline],
+            0,
+            ymax,
+            color="0.8",
+            alpha=0.5,
+        )
     ax.axvline(eff_baseline.value, ls=":", color="k")
     ax.text(
         x=0.95,
