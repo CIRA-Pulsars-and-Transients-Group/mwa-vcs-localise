@@ -122,7 +122,9 @@ def sky_area(ra: np.ndarray, dec: np.ndarray) -> u.quantity:
 
 
 def find_characteristic_baseline(
-    context: MetafitsContext, hdi_prob: float = 0.9, extra_tile_flags: list[str] | None = None,
+    context: MetafitsContext,
+    hdi_prob: float = 0.9,
+    extra_tile_flags: list[str] | None = None,
 ) -> tuple[float, np.ndarray, float, np.ndarray]:
     """From the observation metadata, compute the tile effective and
     maximum baselines, as well as the baseline distribution.
@@ -246,7 +248,9 @@ def plot_array_layout(
     plt.close(fig)
 
 
-def plot_baseline_distribution(context: MetafitsContext, extra_tile_flags: list[str] | None = None) -> None:
+def plot_baseline_distribution(
+    context: MetafitsContext, extra_tile_flags: list[str] | None = None
+) -> None:
     """Plot the baseline distribution and indicate the highest-density interval(s).
 
     Args:
@@ -255,7 +259,9 @@ def plot_baseline_distribution(context: MetafitsContext, extra_tile_flags: list[
         extra_tile_flags (list[str] | None, optional): A list of additional
             tile names to flag as bad. Defaults to None.
     """
-    _, max_baseline, hdi_baseline, baselines = find_characteristic_baseline(context, extra_tile_flags=extra_tile_flags)
+    _, max_baseline, hdi_baseline, baselines = find_characteristic_baseline(
+        context, extra_tile_flags=extra_tile_flags
+    )
     eff_baseline = np.max(hdi_baseline)
 
     tile_flags = np.array([rf.flagged for rf in context.rf_inputs if rf.pol == Pol.X])
