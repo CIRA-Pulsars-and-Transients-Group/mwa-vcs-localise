@@ -16,7 +16,6 @@ import astropy.units as u
 from mwalib import MetafitsContext, Pol
 import arviz as az
 
-
 # Plotting style/formats
 plt.rcParams.update(
     {
