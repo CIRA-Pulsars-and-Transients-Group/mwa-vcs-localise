@@ -16,28 +16,25 @@ def get_primary_beam_power(
     zenith_norm: bool = True,
     show_path: bool = False,
 ) -> dict[str, np.ndarray]:
-    """Calculate the primary beam response (full Stokes) for a given observation
-    over a grid of the sky.
+    """Calculate primary-beam Stokes response across sampled sky positions.
 
-    Args:
-        metadata (MetafitsContext): A mwalib.MetafitsContext object that contains the
-            array configuration and delay settings.
-        freq_hz (float): Observing radio frequency, in Hz.
-        alt (float | np.ndarray): Desired altitude for the pointing direction, in radians.
-        az (float | np.ndarray): Desired azimuth for the pointing direction, in radians.
-        stokes (str, optional): Which Stokes parameters to compute and return.
-            A string containing some unique combination of "IQUV".
-            Values are returned in the order requested here. Defaults to "I".
-        zenith_norm (bool, optional): Whether to normalise the primary beam response to
-            the value at zenith (maximum sensitivity). Defaults to True.
-        show_path (bool, optional): Show the `einsum` optimization path. Defaults to False.
-
-    Raises:
-        ValueError: If an invalid Stokes parameter is requested.
-
-    Returns:
-        dict[str, np.ndarray]: A dictionary with keys corresponding to the Stokes
-            parameters computed, and values being the flattened sky map of the primary beam response.
+    :param metadata: MWALIB metadata containing delay settings.
+    :type metadata: MetafitsContext
+    :param freq_hz: Observing frequency in Hz.
+    :type freq_hz: float
+    :param alt: Altitude in radians.
+    :type alt: float | np.ndarray
+    :param az: Azimuth in radians.
+    :type az: float | np.ndarray
+    :param stokes: Requested Stokes parameters as a unique subset of ``IQUV``.
+    :type stokes: str
+    :param zenith_norm: If True, normalise by zenith response.
+    :type zenith_norm: bool
+    :param show_path: If True, print ``einsum`` optimisation details.
+    :type show_path: bool
+    :raises ValueError: If a requested Stokes parameter is not recognised.
+    :returns: Mapping from each requested Stokes key to a flattened response map.
+    :rtype: dict[str, np.ndarray]
     """
 
     za = np.pi / 2 - alt
@@ -101,8 +98,7 @@ def get_primary_beam_power(
         elif st.casefold() == "V".casefold():
             scale = -1 / 2
         else:
-            print(f"Unrecognized Stokes parameter: {st}!")
-            raise ValueError(f"Unrecognized Stokes parameter: st={st}!")
+            raise ValueError(f"Unrecognised Stokes parameter: st={st}!")
 
         stokes_response.update(
             {

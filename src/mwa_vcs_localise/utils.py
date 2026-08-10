@@ -37,17 +37,16 @@ def generate_wcs_grid(
     arcsec_per_pixel: float = 36.0,
     image_size: int | tuple[int] = 1000,
 ) -> tuple[np.ndarray, np.ndarray, WCS]:
-    """Create a WCS frame and grid provided a central position,
-    nominal pixel size and "image size" (i.e., grid size).
+    """Create a tangent-plane WCS and corresponding RA/Dec coordinate grids.
 
-    Args:
-        grid_ctr (SkyCoord): The centre coordinate for the image/grid.
-        arcsec_per_pixel (float, optional): The number of arcseconds per pixel. Defaults to 36.0.
-        image_size (int | tuple[int], optional): The image size, in pixels. Defaults to 1000.
-
-    Returns:
-        tuple[np.ndarray, np.ndarray, WCS]: The grid in RA, Dec and the WCS object which can
-        be used elsewhere to ensure consistent sky coordinate navigation and projections
+    :param grid_ctr: Central sky coordinate for the grid.
+    :type grid_ctr: SkyCoord
+    :param arcsec_per_pixel: Pixel scale in arcseconds.
+    :type arcsec_per_pixel: float
+    :param image_size: Grid size in pixels as ``N`` or ``(Nx, Ny)``.
+    :type image_size: int | tuple[int]
+    :returns: RA grid, Dec grid, and WCS object.
+    :rtype: tuple[np.ndarray, np.ndarray, WCS]
     """
     # Set image size in pixels
     if isinstance(image_size, (tuple, list)):
@@ -57,7 +56,7 @@ def generate_wcs_grid(
         naxis1 = image_size
         naxis2 = image_size
 
-    # Set central pixel as center of grid
+    # Set central pixel as centre of grid
     crpix1 = naxis1 / 2
     crpix2 = naxis2 / 2
 
@@ -93,15 +92,14 @@ def generate_wcs_grid(
 
 
 def sky_area(ra: np.ndarray, dec: np.ndarray) -> u.quantity:
-    """Estimate the sky area given a list of RA and Dec. coordinates that
-    inscribe some ~rectangle on the sky.
+    """Estimate sky area enclosed by RA/Dec extrema, in steradians.
 
-    Args:
-        ra (np.ndarray): The array of RA coordinates describing the E-W extent of the box.
-        dec (np.ndarray): The array of Dec. coordinates describing the N-S extent of the box.
-
-    Returns:
-        u.quantity: An estimated sky area, in steradians.
+    :param ra: RA samples describing east-west extent in degrees.
+    :type ra: np.ndarray
+    :param dec: Dec samples describing north-south extent in degrees.
+    :type dec: np.ndarray
+    :returns: Estimated area on the sphere.
+    :rtype: u.quantity
     """
 
     ra_rad = np.deg2rad(ra)
@@ -123,25 +121,20 @@ def find_characteristic_baseline(
     hdi_prob: float = 0.9,
     extra_tile_flags: list[str] | None = None,
     exclude_flagged: bool = True,
-) -> tuple[float, np.ndarray, float, np.ndarray]:
-    """From the observation metadata, compute the tile effective and
-    maximum baselines, as well as the baseline distribution.
+) -> tuple[u.Quantity, u.Quantity, u.Quantity, u.Quantity]:
+    """Compute baseline distribution summary statistics from observation metadata.
 
-    Args:
-        context (MetafitsContext): A mwalib.MetafitsContext object that contains the
-            array configuration and delay settings.
-        hdi_prob (float, optional): Fraction of baselines to be included for the
-            highest-density interval. Defaults to 0.9.
-        extra_tile_flags (list[str] | None, optional): A list of additional
-        tile names to flag as bad. Defaults to None.
-        exclude_flagged (bool, optional): Whether to exclude flagged tiles
-            from the baseline distribution.
-    Returns:
-        tuple[float, float, np.ndarray, np.ndarray]: A tuple containing:
-            (1) The baseline mode (i.e., the most common baseline length),
-            (2) The maximum baseline,
-            (3) The highest-density interval, and
-            (4) The baseline distribution.
+    :param context: MWALIB metadata containing tile positions and flags.
+    :type context: MetafitsContext
+    :param hdi_prob: Probability mass for highest-density interval estimate.
+    :type hdi_prob: float
+    :param extra_tile_flags: Additional tile names or IDs to flag as bad.
+    :type extra_tile_flags: list[str] | None
+    :param exclude_flagged: If True, ignore flagged tiles in baseline estimates.
+    :type exclude_flagged: bool
+    :returns: Baseline mode, maximum baseline, HDI interval, and baseline
+        sample distribution.
+    :rtype: tuple[u.Quantity, u.Quantity, u.Quantity, u.Quantity]
     """
     tile_positions = np.array(
         [
@@ -194,17 +187,20 @@ def plot_array_layout(
     extra_tile_flags: list[str] | None = None,
     show_flagged_tiles: bool = True,
 ) -> None:
-    """Plot the tile position layout.
+    """Plot the array tile layout in local east-north coordinates.
 
-    Args:
-        context (MetafitsContext): A mwalib.MetafitsContext object that contains the
-            array configuration and delay settings.
-        ew_limits (list, optional): The E-W limits, relative to the array centre
-            (in metres) to plot. Defaults to None.
-        ns_limits (list, optional): The N-S limits, relative to the array centre
-            (in metres) to plot. Defaults to None.
-        show_flagged_tiles (bool): Plot the flagged tiles in a different colour.
-            Default: True.
+    :param context: MWALIB metadata containing tile positions and flags.
+    :type context: MetafitsContext
+    :param ew_limits: Optional east-west axis limits in metres.
+    :type ew_limits: list | None
+    :param ns_limits: Optional north-south axis limits in metres.
+    :type ns_limits: list | None
+    :param extra_tile_flags: Additional tile names or IDs to flag as bad.
+    :type extra_tile_flags: list[str] | None
+    :param show_flagged_tiles: If True, display flagged tiles separately.
+    :type show_flagged_tiles: bool
+    :returns: None
+    :rtype: None
     """
     tile_positions = np.array(
         [
@@ -302,15 +298,16 @@ def plot_baseline_distribution(
     extra_tile_flags: list[str] | None = None,
     show_flagged_tiles: bool = True,
 ) -> None:
-    """Plot the baseline distribution and indicate the highest-density interval(s).
+    """Plot baseline length histogram and highlight HDI regions.
 
-    Args:
-        context (MetafitsContext): A mwalib.MetafitsContext object that contains the
-            array configuration and delay settings.
-        extra_tile_flags (list[str] | None, optional): A list of additional
-            tile names to flag as bad. Defaults to None.
-        show_flagged_tiles (bool): Plot the flagged tiles in a different colour.
-            Default: True.
+    :param context: MWALIB metadata containing tile positions and flags.
+    :type context: MetafitsContext
+    :param extra_tile_flags: Additional tile names or IDs to flag as bad.
+    :type extra_tile_flags: list[str] | None
+    :param show_flagged_tiles: If True, include flagged tile state in summary.
+    :type show_flagged_tiles: bool
+    :returns: None
+    :rtype: None
     """
     _, max_baseline, hdi_baseline, baselines = find_characteristic_baseline(
         context,
@@ -393,17 +390,24 @@ def plot_primary_beam(
     wcs: WCS | None,
     target: SkyCoord | None = None,
 ) -> None:
-    """Plot the primary beam response across the gridded sky area.
+    """Plot primary-beam power and contour levels over the sampled sky grid.
 
-    Args:
-        context (MetafitsContext): A mwalib.MetafitsContext object that contains the
-            array configuration and delay settings.
-        pb (np.ndarray): The 2D primary beam map.
-        gra (np.ndarray): The 2-D mesh grid in R.A. that defines the sky area of interest.
-        gdec (np.ndarray): The 2-D mesh grid in Dec. that defines the sky area of interest.
-        levels (list): Contour levels to plot, in units of primary beam power (0-1).
-        wcs: (WCS | None): The astropy WCS object defining the world coordinate system.
-        target (SkyCoord | None, optional): A target position to highlight, if desired. Defaults to None.
+    :param context: MWALIB metadata containing observation identifiers.
+    :type context: MetafitsContext
+    :param pb: Two-dimensional primary-beam power map.
+    :type pb: np.ndarray
+    :param gra: RA coordinate grid corresponding to ``pb``.
+    :type gra: np.ndarray
+    :param gdec: Dec coordinate grid corresponding to ``pb``.
+    :type gdec: np.ndarray
+    :param levels: Beam-power levels used for image scaling and contours.
+    :type levels: list
+    :param wcs: WCS projection for display.
+    :type wcs: WCS | None
+    :param target: Optional target coordinate to overlay.
+    :type target: SkyCoord | None
+    :returns: None
+    :rtype: None
     """
 
     fig = plt.figure(figsize=(8, 6), constrained_layout=True)
@@ -462,20 +466,28 @@ def plot_tied_array_beam(
     label: str | None = None,
     oname_suffix: str | None = None,
 ) -> None:
-    """Plot the tied-array beam pattern response across the gridded sky area.
+    """Plot tied-array beam response and contour levels over the sky grid.
 
-    Args:
-        context (MetafitsContext): A mwalib.MetafitsContext object that contains the
-            array configuration and delay settings.
-        tab (np.ndarray): The 2D tied-array beam map.
-        gra (np.ndarray): The 2-D mesh grid in R.A. that defines the sky area of interest.
-        gdec (np.ndarray): The 2-D mesh grid in Dec. that defines the sky area of interest.
-        levels (list): Contour levels to plot, in units of tied-array beam power (0-1).
-        wcs: (WCS | None): The astropy WCS object defining the world coordinate system.
-        scale_arcmin: (float | None): The scale, in arcmin, to show as a scale bar on the plot. Default is 1'.
-        label (str | None, optional): Label to describe the colorbar. Defaults to None (i.e., no label).
-        oname_suffix (str | None, optional): A suffix to append to the end of the saved figure file.
-            Defaults to None (i.e., figure named f"{context.obsid}_tiedarray_beam.png").
+    :param context: MWALIB metadata containing observation identifiers.
+    :type context: MetafitsContext
+    :param tab: Tied-array beam map cube.
+    :type tab: np.ndarray
+    :param gra: RA coordinate grid corresponding to ``tab``.
+    :type gra: np.ndarray
+    :param gdec: Dec coordinate grid corresponding to ``tab``.
+    :type gdec: np.ndarray
+    :param levels: Power levels used for image scaling and contours.
+    :type levels: list
+    :param wcs: WCS projection for display.
+    :type wcs: WCS | None
+    :param scale_arcmin: Scale-bar size in arcminutes.
+    :type scale_arcmin: float | None
+    :param label: Optional colourbar label text.
+    :type label: str | None
+    :param oname_suffix: Optional suffix added to output filename.
+    :type oname_suffix: str | None
+    :returns: None
+    :rtype: None
     """
 
     fig = plt.figure(figsize=(8, 6), constrained_layout=True)
