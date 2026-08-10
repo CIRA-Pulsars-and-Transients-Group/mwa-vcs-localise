@@ -1,19 +1,19 @@
 [build-system]
-requires = ["setuptools >= 64.0", "setuptools-git-versioning", "wheel", "oldest-supported-numpy"]
-build-backend = "setuptools.build_meta"
-
-[tool.setuptools-git-versioning] # use Git info to version
-enabled = true
+requires = ["hatchling", "hatch-vcs"]
+build-backend = "hatchling.build"
 
 [project]
 name = "mwa_vcs_localise"
 dynamic = ["version"]
-readme = "README.md"
+readme = { file = "README.md", content-type = "text/markdown" }
 description = "A package to help localise objects through tied-array beam tiling with the MWA."
 license = { file = "LICENSE" }
 authors = [
   { name = "Bradley Meyers", email = "bradley.meyers1993@gmail.com" },
   { name = "Arash Bahramian", email = "arash.bahramian@curtin.edu.au" },
+]
+maintainers = [
+  { name = "Bradley Meyers", email = "bradley.meyers1993@gmail.com" }
 ]
 classifiers = [
   "Programming Language :: Python :: 3",
@@ -32,9 +32,33 @@ dependencies = [
   "mwa_hyperbeam",
 ]
 
+[dependency-groups]
+dev = [
+    "ruff",
+    "pytest>=8.4.2",
+]
+
 [project.scripts]
 mwa_tab_loc = "mwa_vcs_localise:make_tab_pattern.main"
 
 [project.urls]
 Repository = "https://github.com/CIRA-Pulsars-and-Transients-Group/mwa-vcs-localise.git"
 Issues = "https://github.com/CIRA-Pulsars-and-Transients-Group/mwa-vcs-localise/issues"
+
+
+[tool.hatch.version]
+source = "vcs"
+
+[tool.hatch.version.raw-options]
+tag_regex = "^(?:[vV])?(?P<version>.+)$"
+version_scheme = "guess-next-dev"
+local_scheme = "node-and-date"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/mwa_vcs_localise"]
+
+[tool.hatch.build.hooks.vcs]
+version-file = "src/mwa_vcs_localise/_version.py"
+
+[tool.ruff]
+line-length = 79
