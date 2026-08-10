@@ -46,7 +46,7 @@ def generate_wcs_grid(
         image_size (int | tuple[int], optional): The image size, in pixels. Defaults to 1000.
 
     Returns:
-        7tuple[np.ndarray, np.ndarray, WCS]: The grid in RA, Dec and the WCS object which can
+        tuple[np.ndarray, np.ndarray, WCS]: The grid in RA, Dec and the WCS object which can
         be used elsewhere to ensure consistent sky coordinate navigation and projections
     """
     # Set image size in pixels
