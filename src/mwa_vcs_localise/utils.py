@@ -1,21 +1,18 @@
-#!/usr/bin/env python
-
 ########################################################
 # Licensed under the Academic Free License version 3.0 #
 ########################################################
 
+import arviz as az
+import astropy.units as u
+import cmasher as cm
 import matplotlib.pyplot as plt
 import matplotlib.ticker as mticker
-import cmasher as cm
-
 import numpy as np
-from scipy.spatial.distance import cdist
 from astropy.coordinates import EarthLocation, SkyCoord
-from astropy.wcs import WCS
 from astropy.visualization.wcsaxes import add_scalebar
-import astropy.units as u
+from astropy.wcs import WCS
 from mwalib import MetafitsContext, Pol
-import arviz as az
+from scipy.spatial.distance import cdist
 
 # Plotting style/formats
 plt.rcParams.update(
@@ -153,13 +150,18 @@ def find_characteristic_baseline(
             if rf.pol == Pol.X
         ]
     )
-    tile_flags = np.array([rf.flagged for rf in context.rf_inputs if rf.pol == Pol.X])
+    tile_flags = np.array(
+        [rf.flagged for rf in context.rf_inputs if rf.pol == Pol.X]
+    )
     if extra_tile_flags is not None:
         itile = 0
         for rf in context.rf_inputs:
             if rf.pol != Pol.X:
                 continue
-            if rf.tile_name in extra_tile_flags or str(rf.tile_id) in extra_tile_flags:
+            if (
+                rf.tile_name in extra_tile_flags
+                or str(rf.tile_id) in extra_tile_flags
+            ):
                 tile_flags[itile] = True
             itile += 1
 
@@ -171,14 +173,19 @@ def find_characteristic_baseline(
         )
 
     dist = cdist(tile_positions, tile_positions)
-    dist = np.delete(dist.flatten(), np.where(dist.flatten() <= 0.01))  # remove autos
+    dist = np.delete(
+        dist.flatten(), np.where(dist.flatten() <= 0.01)
+    )  # remove autos
     max_dist = np.max(dist) * u.m
     distances = dist * u.m
 
     # use a KDE approach to estimate the mode of the baseline distribution
-    grid, density = az.kde(dist)
+    print(az.kde(dist))
+    grid, density, _ = az.kde(dist)
     dist_mode = grid[np.argmax(density)] * u.m
-    dist_hdi = np.asarray(az.hdi(dist, hdi_prob=hdi_prob, multimodal=False)) * u.m
+    dist_hdi = (
+        np.asarray(az.hdi(dist, hdi_prob=hdi_prob, multimodal=False)) * u.m
+    )
 
     return dist_mode, max_dist, dist_hdi, distances
 
@@ -209,17 +216,25 @@ def plot_array_layout(
             if rf.pol == Pol.X
         ]
     )
-    tile_flags = np.array([rf.flagged for rf in context.rf_inputs if rf.pol == Pol.X])
+    tile_flags = np.array(
+        [rf.flagged for rf in context.rf_inputs if rf.pol == Pol.X]
+    )
     if extra_tile_flags is not None:
         itile = 0
         for rf in context.rf_inputs:
             if rf.pol != Pol.X:
                 continue
-            if rf.tile_name in extra_tile_flags or str(rf.tile_id) in extra_tile_flags:
+            if (
+                rf.tile_name in extra_tile_flags
+                or str(rf.tile_id) in extra_tile_flags
+            ):
                 tile_flags[itile] = True
             itile += 1
 
-    _, max_baseline, hdi_baseline, _ = find_characteristic_baseline(context)
+    _, max_baseline, hdi_baseline, _ = find_characteristic_baseline(
+        context,
+        exclude_flagged=show_flagged_tiles,
+    )
     eff_baseline = np.max(hdi_baseline) * u.m
 
     okay_tiles_n = np.ma.masked_array(tile_positions[:, 1], mask=tile_flags)
@@ -272,14 +287,16 @@ def plot_array_layout(
     plt.ylabel("North coordiante from array centre (m)", fontsize=14)
     plt.title(
         f"Observation ID: {context.obs_id}  ({context.sched_start_utc})\n"
-        + rf"Max. baseline $\approx$ {max_baseline*u.m:.0f}  "
+        + rf"Max. baseline $\approx$ {max_baseline * u.m:.0f}  "
         + rf"Characteristic baseline $\approx$ {eff_baseline:.0f}"
     )
     plt.minorticks_on()
     plt.tick_params(labelsize=12)
     plt.grid()
     plt.grid(which="minor", ls=":")
-    plt.savefig(f"{context.obs_id}_array_layout.png", dpi=200, bbox_inches="tight")
+    plt.savefig(
+        f"{context.obs_id}_array_layout.png", dpi=200, bbox_inches="tight"
+    )
     plt.close(fig)
 
 
@@ -299,17 +316,24 @@ def plot_baseline_distribution(
             Default: True.
     """
     _, max_baseline, hdi_baseline, baselines = find_characteristic_baseline(
-        context, extra_tile_flags=extra_tile_flags
+        context,
+        extra_tile_flags=extra_tile_flags,
+        exclude_flagged=show_flagged_tiles,
     )
     eff_baseline = np.max(hdi_baseline)
 
-    tile_flags = np.array([rf.flagged for rf in context.rf_inputs if rf.pol == Pol.X])
+    tile_flags = np.array(
+        [rf.flagged for rf in context.rf_inputs if rf.pol == Pol.X]
+    )
     if extra_tile_flags is not None:
         itile = 0
         for rf in context.rf_inputs:
             if rf.pol != Pol.X:
                 continue
-            if rf.tile_name in extra_tile_flags or str(rf.tile_id) in extra_tile_flags:
+            if (
+                rf.tile_name in extra_tile_flags
+                or str(rf.tile_id) in extra_tile_flags
+            ):
                 tile_flags[itile] = True
             itile += 1
 
@@ -318,7 +342,9 @@ def plot_baseline_distribution(
 
     fig = plt.figure(figsize=(8, 6))
     ax = fig.add_subplot()
-    ax.hist([b.value for b in baselines], bins=np.arange(0, max_baseline.value, 10))
+    ax.hist(
+        [b.value for b in baselines], bins=np.arange(0, max_baseline.value, 10)
+    )
     ymax = max(ax.get_ylim())
 
     if len(np.shape(hdi_baseline)) > 1:
@@ -350,12 +376,14 @@ def plot_baseline_distribution(
     plt.ylabel("Frequency of baseline length", fontsize=14)
     plt.title(
         f"Observation ID: {context.obs_id}  ({context.sched_start_utc})\n"
-        + rf"Max. baseline $\approx$ {max_baseline*u.m:.0f}  "
+        + rf"Max. baseline $\approx$ {max_baseline * u.m:.0f}  "
         + rf"Characteristic baseline $\approx$ {eff_baseline:.0f}"
     )
     plt.minorticks_on()
     plt.tick_params(labelsize=12)
-    plt.savefig(f"{context.obs_id}_baseline_dist.png", dpi=200, bbox_inches="tight")
+    plt.savefig(
+        f"{context.obs_id}_baseline_dist.png", dpi=200, bbox_inches="tight"
+    )
     plt.close(fig)
 
 
@@ -485,7 +513,10 @@ def plot_tied_array_beam(
     # Add a scale bar
     if scale_arcmin:
         add_scalebar(
-            ax, scale_arcmin * u.arcmin, label=f"{scale_arcmin}'", color="black"
+            ax,
+            scale_arcmin * u.arcmin,
+            label=f"{scale_arcmin}'",
+            color="black",
         )
 
     tab_map.cmap.set_under("white")

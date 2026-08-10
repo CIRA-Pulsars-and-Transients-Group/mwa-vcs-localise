@@ -1,14 +1,14 @@
-#!/usr/bin/env python
-
 ########################################################
 # Licensed under the Academic Free License version 3.0 #
 ########################################################
 
 # For basic algebra and statistics
+import cmasher as cm
+import matplotlib.pyplot as plt
+import matplotlib.ticker as mtick
 import numpy as np
-import scipy.stats as st
 import scipy.spatial as sp
-from scipy.ndimage import label
+import scipy.stats as st
 
 # Astropy
 from astropy.coordinates import SkyCoord
@@ -17,9 +17,7 @@ from astropy.wcs import WCS
 
 # For visualization
 from matplotlib.figure import Figure
-import matplotlib.pyplot as plt
-import matplotlib.ticker as mtick
-import cmasher as cm
+from scipy.ndimage import label
 
 
 def snr_reader(
@@ -78,7 +76,8 @@ def covariance_estimation(
     """
     simulation_snr = st.multivariate_normal(obs_snr).rvs(nsim)
     simulation_ratio = (
-        simulation_snr[:, obs_mask] / simulation_snr.T[obs_snr.argmax()][:, None]
+        simulation_snr[:, obs_mask]
+        / simulation_snr.T[obs_snr.argmax()][:, None]
     )
     covariance = np.cov(simulation_ratio, rowvar=False)
     if np.all(np.abs(covariance) < 0.2):
@@ -103,13 +102,22 @@ def covariance_estimation(
         )
         i_maxsnr = np.argmax(obs_snr) + 1
         beam_pair_labels = np.array(
-            [f"{obs_i+1}/{i_maxsnr}" for obs_i, obs_snr in enumerate(obs_snr)]
+            [
+                f"{obs_i + 1}/{i_maxsnr}"
+                for obs_i, obs_snr in enumerate(obs_snr)
+            ]
         )[obs_mask]
-        ax1.set_xticks(ticks=np.arange(0, len(obs_weights)), labels=beam_pair_labels)
-        ax1.set_yticks(ticks=np.arange(0, len(obs_weights)), labels=beam_pair_labels)
+        ax1.set_xticks(
+            ticks=np.arange(0, len(obs_weights)), labels=beam_pair_labels
+        )
+        ax1.set_yticks(
+            ticks=np.arange(0, len(obs_weights)), labels=beam_pair_labels
+        )
         ax1.set_xlabel("Beam pair", fontsize=24, ha="center")
         ax1.set_ylabel("Beam pair", fontsize=24, ha="center")
-        ax1.set_title(r"$i_{\rm SNRmax}=$ " + f"{i_maxsnr}", fontsize=24, va="bottom")
+        ax1.set_title(
+            r"$i_{\rm SNRmax}=$ " + f"{i_maxsnr}", fontsize=24, va="bottom"
+        )
         ax1.tick_params(axis="both", which="major", labelsize=24)
         ax1.tick_params(axis="both", which="major", length=0)
         ax1.tick_params(
@@ -117,9 +125,15 @@ def covariance_estimation(
         )
 
         cbar = fig.colorbar(
-            ax1_img, ax=fig.axes, orientation="vertical", location="right", pad=0.01
+            ax1_img,
+            ax=fig.axes,
+            orientation="vertical",
+            location="right",
+            pad=0.01,
         )
-        cbar.ax.set_ylabel("Covariance", fontsize=24, rotation=270, labelpad=20)
+        cbar.ax.set_ylabel(
+            "Covariance", fontsize=24, rotation=270, labelpad=20
+        )
         cbar.ax.yaxis.set_ticks_position("right")
         cbar.ax.tick_params(
             which="major", direction="in", length=9, left=True, right=True
@@ -312,7 +326,8 @@ def localise_and_plot(
         )
         ctr_coord = np.squeeze(obs_beam_centers[~obs_mask])
         dists = [
-            c.to("deg").value for c in ctr_coord.separation(obs_beam_centers[obs_mask])
+            c.to("deg").value
+            for c in ctr_coord.separation(obs_beam_centers[obs_mask])
         ]
         max_dist = max(dists)
         mu = np.array([ctr_coord.ra.deg, ctr_coord.dec.deg])
@@ -340,7 +355,9 @@ def localise_and_plot(
     prob[prob < 1e-9] = 0
 
     # Coordinates associated with minimum chi2
-    best_ra_index, best_dec_index = np.unravel_index(np.argmax(prob), prob.shape)
+    best_ra_index, best_dec_index = np.unravel_index(
+        np.argmax(prob), prob.shape
+    )
     best_ra, best_dec = (
         grid_ra[best_ra_index, best_dec_index],
         grid_dec[best_ra_index, best_dec_index],
@@ -354,17 +371,27 @@ def localise_and_plot(
     sigma_levels = [5, 3, 1]
     print(f"Significance intervals set at: {sigma_levels}-sigma")
     contour_levels = np.array([mahal_error(prob, s) for s in sigma_levels])
-    sym_err, _, nislands = estimate_errors_from_islands(
-        prob, grid_ra, grid_dec, best_ra_index, best_dec_index, contour_levels.min()
+    sym_err, _, _ = estimate_errors_from_islands(
+        prob,
+        grid_ra,
+        grid_dec,
+        best_ra_index,
+        best_dec_index,
+        contour_levels.min(),
     )
 
     print(f"best position estimate = {best_coord_hms}")
     print(f"                       = {best_coord_deg} deg")
     for isig, sig in enumerate(sigma_levels):
-        sig_err, _, nislands = estimate_errors_from_islands(
-            prob, grid_ra, grid_dec, best_ra_index, best_dec_index, contour_levels[isig]
+        sig_err, _, _nislands = estimate_errors_from_islands(
+            prob,
+            grid_ra,
+            grid_dec,
+            best_ra_index,
+            best_dec_index,
+            contour_levels[isig],
         )
-        print(f"  {sig}-sigma sym. pos. err. = {sig_err*60:g} arcmin")
+        print(f"  {sig}-sigma sym. pos. err. = {sig_err * 60:g} arcmin")
 
     # Prepare the figure and place artist elements
     fig = plt.figure(figsize=(8, 6), constrained_layout=True)
@@ -428,7 +455,9 @@ def localise_and_plot(
         )
 
         # Position the inset in the top-right corner of the figure
-        ax1_img_inset = ax1.inset_axes([0.675, 0.675, 0.31, 0.31], projection=wcs)
+        ax1_img_inset = ax1.inset_axes(
+            [0.675, 0.675, 0.31, 0.31], projection=wcs
+        )
         ax1_img_inset.set_aspect(ax1.get_aspect())
 
         # Localisation map (inset)
@@ -458,8 +487,12 @@ def localise_and_plot(
         ax1.indicate_inset_zoom(ax1_img_inset, edgecolor="black")
 
         # Set some axis customisations
-        ax1_img_inset.xaxis.set_major_locator(mtick.MaxNLocator(5, prune="both"))
-        ax1_img_inset.yaxis.set_major_locator(mtick.MaxNLocator(5, prune="both"))
+        ax1_img_inset.xaxis.set_major_locator(
+            mtick.MaxNLocator(5, prune="both")
+        )
+        ax1_img_inset.yaxis.set_major_locator(
+            mtick.MaxNLocator(5, prune="both")
+        )
         ax1_img_inset.grid(ls=":")
         ax1_img_inset.tick_params(axis="both", direction="out")
         ax1_img_inset.set_xlabel(" ")
@@ -480,7 +513,7 @@ def localise_and_plot(
                 transform=ax1_img_inset.get_transform("world"),
             )
             ax1.set_title(
-                f"""Best-fit localisation = {best_coord_hms}\nUncertainty ({sigma_levels[0]}$\sigma$, no iono.) = $\pm$ {sym_err*60:g} arcmin""",
+                f"""Best-fit localisation = {best_coord_hms}\nUncertainty ({sigma_levels[0]}$\\sigma$, no iono.) = $\\pm$ {sym_err * 60:g} arcmin""",
             )
 
         # Add a truth coordinate for comparison to the inset
@@ -509,11 +542,13 @@ def localise_and_plot(
         )
 
         best_true_sep = best_coord.separation(truth_coords)
-        print(f"Offset of truth from best-fit position: {best_true_sep.to('arcmin'):g}")
+        print(
+            f"Offset of truth from best-fit position: {best_true_sep.to('arcmin'):g}"
+        )
 
     # Collect and fix legend handles and labels
     ctr_h = ax1_ctr.legend_elements()[0]
-    ctr_l = [f"${s}\sigma$" for s in sigma_levels]
+    ctr_l = [rf"${s}\sigma$" for s in sigma_levels]
     bpt_h, bpt_l = ax1.get_legend_handles_labels()
 
     all_handles = ctr_h + bpt_h
