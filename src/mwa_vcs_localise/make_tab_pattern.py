@@ -161,13 +161,13 @@ def main():
         context,
         hdi_prob=density_interval_prob,
         extra_tile_flags=args.tile_flags,
+        exclude_flagged=(not args.no_tile_flags),
     )
     eff_baseline = np.max(hdi_baseline)
     tile_positions, num_good, num_flagged = extract_working_tile_positions(
-        
         context,
         extra_tile_flags=args.tile_flags,
-        exclude_flagged=(not args.no_tile_flags)
+        exclude_flagged=(not args.no_tile_flags),
     )
     num_tiles = num_good + num_flagged
     print(f"... number of tiles: {num_tiles}")
@@ -188,8 +188,16 @@ def main():
 
     if args.plot:
         print("Plotting array layout...")
-        plot_array_layout(context, extra_tile_flags=args.tile-flags, show_flagged_tiles=(not args.no_tile_flags))
-        plot_baseline_distribution(context, extra_tile_flags=args.tile-flags)
+        plot_array_layout(
+            context,
+            extra_tile_flags=args.tile - flags,
+            show_flagged_tiles=(not args.no_tile_flags),
+        )
+        plot_baseline_distribution(
+            context,
+            extra_tile_flags=args.tile - flags,
+            show_flagged_tiles=(not args.no_tile_flags),
+        )
 
     # Create the astrometric quantity for the beamformed target direction
     print("Creating look-direction vector...")

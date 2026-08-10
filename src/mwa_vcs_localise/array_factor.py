@@ -12,8 +12,9 @@ from .utils import MWA_CENTRE_CABLE_LEN
 
 
 def extract_working_tile_positions(
-    metadata: MetafitsContext, extra_tile_flags: list[str] | None = None,
-    exclude_flagged: bool = True
+    metadata: MetafitsContext,
+    extra_tile_flags: list[str] | None = None,
+    exclude_flagged: bool = True,
 ) -> tuple[np.ndarray, int, int]:
     """Extract tile position information required for beamforming and/or
     computing the array factor quantity from a metafits structure.
@@ -63,7 +64,6 @@ def extract_working_tile_positions(
             if rf.tile_name in extra_tile_flags or str(rf.tile_id) in extra_tile_flags:
                 tile_flags[itile] = True
             itile += 1
-
 
     if exclude_flagged:
         tile_positions = np.delete(tile_positions, np.where(tile_flags & True), axis=0)

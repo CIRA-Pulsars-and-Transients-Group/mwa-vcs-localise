@@ -125,6 +125,7 @@ def find_characteristic_baseline(
     context: MetafitsContext,
     hdi_prob: float = 0.9,
     extra_tile_flags: list[str] | None = None,
+    exclude_flagged: bool = True,
 ) -> tuple[float, np.ndarray, float, np.ndarray]:
     """From the observation metadata, compute the tile effective and
     maximum baselines, as well as the baseline distribution.
@@ -136,6 +137,8 @@ def find_characteristic_baseline(
             highest-density interval. Defaults to 0.9.
         extra_tile_flags (list[str] | None, optional): A list of additional
         tile names to flag as bad. Defaults to None.
+        exclude_flagged (bool, optional): Whether to exclude flagged tiles
+            from the baseline distribution.
     Returns:
         tuple[float, float, np.ndarray, np.ndarray]: A tuple containing:
             (1) The baseline mode (i.e., the most common baseline length),
@@ -160,7 +163,12 @@ def find_characteristic_baseline(
                 tile_flags[itile] = True
             itile += 1
 
-    tile_positions = np.delete(tile_positions, np.where(tile_flags & True), axis=0)
+    if exclude_flagged:
+        tile_positions = np.delete(
+            tile_positions,
+            np.where(tile_flags & True),
+            axis=0,
+        )
 
     dist = cdist(tile_positions, tile_positions)
     dist = np.delete(dist.flatten(), np.where(dist.flatten() <= 0.01))  # remove autos
@@ -179,7 +187,8 @@ def plot_array_layout(
     context: MetafitsContext,
     ew_limits: list | None = None,
     ns_limits: list | None = None,
-    show_flagged_tiles: bool = True
+    extra_tile_flags: list[str] | None = None,
+    show_flagged_tiles: bool = True,
 ) -> None:
     """Plot the tile position layout.
 
@@ -201,6 +210,14 @@ def plot_array_layout(
         ]
     )
     tile_flags = np.array([rf.flagged for rf in context.rf_inputs if rf.pol == Pol.X])
+    if extra_tile_flags is not None:
+        itile = 0
+        for rf in context.rf_inputs:
+            if rf.pol != Pol.X:
+                continue
+            if rf.tile_name in extra_tile_flags or str(rf.tile_id) in extra_tile_flags:
+                tile_flags[itile] = True
+            itile += 1
 
     _, max_baseline, hdi_baseline, _ = find_characteristic_baseline(context)
     eff_baseline = np.max(hdi_baseline) * u.m
@@ -267,7 +284,9 @@ def plot_array_layout(
 
 
 def plot_baseline_distribution(
-    context: MetafitsContext, extra_tile_flags: list[str] | None = None
+    context: MetafitsContext,
+    extra_tile_flags: list[str] | None = None,
+    show_flagged_tiles: bool = True,
 ) -> None:
     """Plot the baseline distribution and indicate the highest-density interval(s).
 
@@ -276,6 +295,8 @@ def plot_baseline_distribution(
             array configuration and delay settings.
         extra_tile_flags (list[str] | None, optional): A list of additional
             tile names to flag as bad. Defaults to None.
+        show_flagged_tiles (bool): Plot the flagged tiles in a different colour.
+            Default: True.
     """
     _, max_baseline, hdi_baseline, baselines = find_characteristic_baseline(
         context, extra_tile_flags=extra_tile_flags
@@ -460,10 +481,12 @@ def plot_tied_array_beam(
     ax.autoscale_view()
     ax.tick_params(labelsize=12)
     ax.grid(ls=":")
-    
+
     # Add a scale bar
     if scale_arcmin:
-        add_scalebar(ax, scale_arcmin * u.arcmin, label=f"{scale_arcmin}'", color="black")
+        add_scalebar(
+            ax, scale_arcmin * u.arcmin, label=f"{scale_arcmin}'", color="black"
+        )
 
     tab_map.cmap.set_under("white")
     cbar = plt.colorbar(
