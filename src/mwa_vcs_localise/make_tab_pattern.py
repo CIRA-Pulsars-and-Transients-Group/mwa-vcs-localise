@@ -127,6 +127,12 @@ def main():
         action="store_true",
     )
     parser.add_argument(
+        "--tile-flags",
+        type=str,
+        help="A comma-separated list of tile names or IDs to flag.",
+        default=None,
+    )
+    parser.add_argument(
         "--no-tile-flags",
         help="Do not remove flagged tile positions when generating tied-array beam pattern.",
         action="store_true",
@@ -154,23 +160,26 @@ def main():
     char_baseline, max_baseline, hdi_baseline, baselines = find_characteristic_baseline(
         context,
         hdi_prob=density_interval_prob,
+        extra_tile_flags=args.tile_flags,
     )
-    eff_baseline = np.max(hdi_baseline) * u.m
+    eff_baseline = np.max(hdi_baseline)
     tile_positions, num_good, num_flagged = extract_working_tile_positions(
+        
         context,
+        extra_tile_flags=args.tile_flags,
         exclude_flagged=(not args.no_tile_flags)
     )
     num_tiles = num_good + num_flagged
     print(f"... number of tiles: {num_tiles}")
     print(f"... number of unflagged tiles: {num_good}")
     print(f"... number of baselines: {len(baselines)}")
-    print(f"Maximum baseline, Bmax = {max_baseline*u.m:g}")
-    print(f"Approx. mode of baselines = {char_baseline*u.m:g}")
+    print(f"Maximum baseline, Bmax = {max_baseline:g}")
+    print(f"Approx. mode of baselines = {char_baseline:g}")
     print(f"Effective baseline, Beff = {eff_baseline:g}")
-    print(f"Centre frequencies:")
+    print("Centre frequencies:")
     for freq in freqs:
         print(f"f = {freq.to(u.MHz):g}  λ = {(c.c/freq).to(u.m):g}")
-    width = ((c.c / freqs) / eff_baseline) * u.rad
+    width = (1 * u.rad * (c.c / freqs) / eff_baseline).decompose()
     print(f"... beam width ~ λ/Beff: {width.to(u.arcminute)}")
 
     # Define reference frame and time
@@ -179,8 +188,8 @@ def main():
 
     if args.plot:
         print("Plotting array layout...")
-        plot_array_layout(context, show_flagged_tiles=(not args.no_tile_flags))
-        plot_baseline_distribution(context)
+        plot_array_layout(context, extra_tile_flags=args.tile-flags, show_flagged_tiles=(not args.no_tile_flags))
+        plot_baseline_distribution(context, extra_tile_flags=args.tile-flags)
 
     # Create the astrometric quantity for the beamformed target direction
     print("Creating look-direction vector...")
