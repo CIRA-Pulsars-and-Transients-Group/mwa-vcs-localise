@@ -1,40 +1,30 @@
-#!/usr/bin/env python
-
 ########################################################
 # Licensed under the Academic Free License version 3.0 #
 ########################################################
 
 import numpy as np
-from mwalib import MetafitsContext, Pol
 from astropy.constants import c as sol
+from mwalib import MetafitsContext, Pol
 
 from .utils import MWA_CENTRE_CABLE_LEN
 
 
 def extract_working_tile_positions(
-    metadata: MetafitsContext, extra_tile_flags: list[str] | None = None
+    metadata: MetafitsContext,
+    extra_tile_flags: list[str] | None = None,
+    exclude_flagged: bool = True,
 ) -> tuple[np.ndarray, int, int]:
-    """Extract tile position information required for beamforming and/or
-    computing the array factor quantity from a metafits structure.
+    """Extract tile positions used for beamforming from metafits metadata.
 
-    Flagged tiles are automatically excluded from the result.
-
-
-    Args:
-        metadata (MetafitsContext): An MWALIB MetafitsContext structure
-            containing the array layout information.
-        extra_tile_flags (list[str] | None, optional): A list of additional
-            tile names or IDs to flag as bad. Defaults to None.
-
-    Returns:
-        tuple[np.ndarray, int, int]: A tuple containing:
-            (1) Working tile positions and electrical lengths for
-                beamforming, formatted as an array of arrays, where
-                each item in the outer array is:
-                    [east_m, north_m, height_m, electrical_length_m]
-                for a single tile.
-             (2) The number of unflagged tiles, and
-             (3) The number of flagged tiles.
+    :param metadata: MWALIB metadata containing array layout and tile state.
+    :type metadata: MetafitsContext
+    :param extra_tile_flags: Additional tile names or IDs to flag.
+    :type extra_tile_flags: list[str] | None
+    :param exclude_flagged: If True, omit flagged tiles from returned positions.
+    :type exclude_flagged: bool
+    :returns: Tile position vectors ``[east, north, height, cable_length]``, the
+        number of unflagged tiles, and the number of flagged tiles.
+    :rtype: tuple[np.ndarray, int, int]
     """
 
     # Gather the tile positions into a "vector" for each tile
@@ -55,17 +45,27 @@ def extract_working_tile_positions(
 
     # Gather the flagged tile information from the metafits information
     # and remove those tiles from the above vector
-    tile_flags = np.array([rf.flagged for rf in metadata.rf_inputs if rf.pol == Pol.X])
+    tile_flags = np.array(
+        [rf.flagged for rf in metadata.rf_inputs if rf.pol == Pol.X]
+    )
     if extra_tile_flags is not None:
         itile = 0
         for rf in metadata.rf_inputs:
             if rf.pol != Pol.X:
                 continue
-            if rf.tile_name in extra_tile_flags or str(rf.tile_id) in extra_tile_flags:
+            if (
+                rf.tile_name in extra_tile_flags
+                or str(rf.tile_id) in extra_tile_flags
+            ):
                 tile_flags[itile] = True
             itile += 1
 
-    tile_positions = np.delete(tile_positions, np.where(tile_flags & True), axis=0)
+    if exclude_flagged:
+        tile_positions = np.delete(
+            tile_positions, np.where(tile_flags & True), axis=0
+        )
+    else:
+        print("Not removing flagged tiles from list.")
 
     num_ok_tiles = (~tile_flags).sum()
     num_bad_tiles = (tile_flags).sum()
@@ -79,20 +79,19 @@ def calc_geometric_delays(
     alt: float | np.ndarray,
     az: float | np.ndarray,
 ) -> np.ndarray:
-    """Compute the geometric delay phases for each element position in order to
-    "phase up" to the provided position at a specific frequency. These are the
-    phasors used in a beamforming operation.
+    """Compute geometric delay phasors for one or more sky directions.
 
-    Args:
-        positions (np.ndarray): An array or element position vectors, including their
-            equivalent electrical length, in metres.
-        freq_hz (float): Observing radio frequency, in Hz.
-        alt (float | np.ndarray): Desired altitude for the pointing direction, in radians.
-        az (float | np.ndarray): Desired azimuth for the pointing direction, in radians.
-
-    Returns:
-        np.ndarray: The required phasors needed to rotate the element patterns to
-            each requested az/alt pair.
+    :param positions: Tile position vectors including electrical length in
+        metres.
+    :type positions: np.ndarray
+    :param freq_hz: Observing frequency in Hz.
+    :type freq_hz: float
+    :param alt: Altitude in radians.
+    :type alt: float | np.ndarray
+    :param az: Azimuth in radians.
+    :type az: float | np.ndarray
+    :returns: Complex phasors for each requested direction.
+    :rtype: np.ndarray
     """
 
     # Create the unit vector(s)
@@ -125,19 +124,17 @@ def calc_geometric_delays(
     return phasor
 
 
-def calc_array_factor_power(look_w: np.ndarray, target_w: np.ndarray) -> np.ndarray:
-    """Compute the array factor power from a given pointing phasor
-    and one or more target directions.
+def calc_array_factor_power(
+    look_w: np.ndarray, target_w: np.ndarray
+) -> np.ndarray:
+    """Compute array-factor power for sampled sky directions.
 
-    Args:
-        look_w (np.ndarray): The complex phasor representing the tile phases
-            in the desired "look direction".
-        target_w (np.ndarray): The complex phasor(s) representing the tile
-            phases required to look in the desired sample directions.
-
-    Returns:
-        np.ndarray: The absolute array factor power, for each given
-            target direction.
+    :param look_w: Complex phasor vector for the look direction.
+    :type look_w: np.ndarray
+    :param target_w: Complex phasors for sampled target directions.
+    :type target_w: np.ndarray
+    :returns: Normalised array-factor power for each target direction.
+    :rtype: np.ndarray
     """
 
     # At this stage, the shape of target_w = (nant, n_ra, n_dec) and while the shape of look_w = (nant,)

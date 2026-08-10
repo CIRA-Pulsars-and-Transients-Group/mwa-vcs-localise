@@ -19,7 +19,7 @@ mwa_tab_loc \
     -f ${singlefreq} \
     -t "${obstime}" \
     -L "${lookdir}" \
-    --use_wcs --wcs_pixel_size 10 \
+    --use-wcs --wcs-pixel-size 10 \
     --nopb \
     --plot
 
@@ -31,7 +31,7 @@ mwa_tab_loc \
     -f ${singlefreq} \
     -t "${obstime}" \
     -L "${lookdir}" \
-    --use_wcs --wcs_pixel_size 10 \
+    --use-wcs --wcs-pixel-size 10 \
     --plot
 
 mv ${obsid}_tiedarray_beam_pb.png ${obsid}_tiedarray_beam_pb_zoom.png

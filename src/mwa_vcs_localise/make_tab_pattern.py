@@ -1,33 +1,33 @@
-#!/usr/bin/env python
-
 ########################################################
 # Licensed under the Academic Free License version 3.0 #
 ########################################################
-import time as timer
 import argparse
+import sys
+import time as timer
+
+import astropy.constants as c
+import astropy.units as u
 import mwalib
 import numpy as np
-from astropy.coordinates import SkyCoord, AltAz
+from astropy.coordinates import AltAz, SkyCoord
 from astropy.time import Time
-import astropy.units as u
-import astropy.constants as c
+
+from .array_factor import (
+    calc_array_factor_power,
+    calc_geometric_delays,
+    extract_working_tile_positions,
+)
+from .primary_beam import get_primary_beam_power
+from .stats import localise, snr_reader
 from .utils import (
     MWA_LOCATION,
-    sky_area,
     find_characteristic_baseline,
+    generate_wcs_grid,
     plot_array_layout,
     plot_baseline_distribution,
     plot_primary_beam,
     plot_tied_array_beam,
-    generate_wcs_grid,
 )
-from .array_factor import (
-    extract_working_tile_positions,
-    calc_geometric_delays,
-    calc_array_factor_power,
-)
-from .primary_beam import get_primary_beam_power
-from .stats import localise, snr_reader
 
 
 def main():
@@ -39,7 +39,10 @@ def main():
         help="Metafits file of the associated observation.",
     )
     parser.add_argument(
-        "-t", dest="time", type=str, help="UTC time of observation (format: ISOT)."
+        "-t",
+        dest="time",
+        type=str,
+        help="UTC time of observation (format: ISOT).",
     )
     parser.add_argument(
         "-f",
@@ -68,12 +71,12 @@ def main():
         default=None,
     )
     parser.add_argument(
-        "--use_wcs",
+        "--use-wcs",
         action="store_true",
         help="Use WCS to define a grid around the central point.",
     )
     parser.add_argument(
-        "--wcs_grid_size",
+        "--wcs-grid-size",
         help="""The WCS grid size, in pixels, the be created. The centre of the grid
           is either the provided 'look-direction' (-L option) or the first entry
           in the provided detection file (--detfile option).""",
@@ -82,7 +85,7 @@ def main():
         default=(1024, 1024),
     )
     parser.add_argument(
-        "--wcs_pixel_size",
+        "--wcs-pixel-size",
         help="""The size of each pixel in the WCS grid, in arcseconds""",
         type=float,
         default=10.0,
@@ -127,16 +130,23 @@ def main():
         action="store_true",
     )
     parser.add_argument(
-        "--tile_flags",
+        "--tile-flags",
         type=str,
         help="A comma-separated list of tile names or IDs to flag.",
         default=None,
     )
+    parser.add_argument(
+        "--no-tile-flags",
+        help="Do not remove flagged tile positions when generating tied-array beam pattern.",
+        action="store_true",
+    )
 
     args = parser.parse_args()
     if len(args.freq) > 10:
-        print("Cannot use more than 10 frequencies at a time, please adjust input.")
-        exit(1)
+        print(
+            "Cannot use more than 10 frequencies at a time, please adjust input."
+        )
+        sys.exit(1)
     freqs = np.array([f for f in args.freq]) * u.Hz
 
     if args.regularise == "none":
@@ -152,15 +162,19 @@ def main():
 
     # Examine the array layout, collect tile positions and baseline information
     density_interval_prob = 0.90
-    char_baseline, max_baseline, hdi_baseline, baselines = find_characteristic_baseline(
-        context,
-        hdi_prob=density_interval_prob,
-        extra_tile_flags=args.tile_flags,
+    char_baseline, max_baseline, hdi_baseline, baselines = (
+        find_characteristic_baseline(
+            context,
+            hdi_prob=density_interval_prob,
+            extra_tile_flags=args.tile_flags,
+            exclude_flagged=(not args.no_tile_flags),
+        )
     )
     eff_baseline = np.max(hdi_baseline)
     tile_positions, num_good, num_flagged = extract_working_tile_positions(
         context,
         extra_tile_flags=args.tile_flags,
+        exclude_flagged=(not args.no_tile_flags),
     )
     num_tiles = num_good + num_flagged
     print(f"... number of tiles: {num_tiles}")
@@ -171,7 +185,7 @@ def main():
     print(f"Effective baseline, Beff = {eff_baseline:g}")
     print("Centre frequencies:")
     for freq in freqs:
-        print(f"f = {freq.to(u.MHz):g}  λ = {(c.c/freq).to(u.m):g}")
+        print(f"f = {freq.to(u.MHz):g}  λ = {(c.c / freq).to(u.m):g}")
     width = (1 * u.rad * (c.c / freqs) / eff_baseline).decompose()
     print(f"... beam width ~ λ/Beff: {width.to(u.arcminute)}")
 
@@ -181,8 +195,16 @@ def main():
 
     if args.plot:
         print("Plotting array layout...")
-        plot_array_layout(context)
-        plot_baseline_distribution(context, extra_tile_flags=args.tile_flags)
+        plot_array_layout(
+            context,
+            extra_tile_flags=args.tile_flags,
+            show_flagged_tiles=(not args.no_tile_flags),
+        )
+        plot_baseline_distribution(
+            context,
+            extra_tile_flags=args.tile_flags,
+            show_flagged_tiles=(not args.no_tile_flags),
+        )
 
     # Create the astrometric quantity for the beamformed target direction
     print("Creating look-direction vector...")
@@ -205,7 +227,7 @@ def main():
     t0 = timer.time()
     look_positions_altaz = look_positions.transform_to(altaz_frame)
     t1 = timer.time()
-    print(f"... took {t1-t0} seconds")
+    print(f"... took {t1 - t0} seconds")
 
     # In principle, allow the user to provide N inputs separated by spaces, or just
     # ask for M pointings around the source
@@ -218,8 +240,12 @@ def main():
     )
 
     if args.use_wcs:
-        print("Generating a WCS grid around the central localisation position...")
-        print(f"   {look_positions[0].to_string('hmsdms', sep=':', precision=2)}")
+        print(
+            "Generating a WCS grid around the central localisation position..."
+        )
+        print(
+            f"   {look_positions[0].to_string('hmsdms', sep=':', precision=2)}"
+        )
         print(f"Grid shape = {args.wcs_grid_size}")
         print(f"Pixel scale = {args.wcs_pixel_size} arcsec")
 
@@ -246,13 +272,13 @@ def main():
             unit=("hourangle", "deg"),
         )
     t1 = timer.time()
-    print(f"... took {t1-t0} seconds")
+    print(f"... took {t1 - t0} seconds")
 
     print("Converting to AltAz...")
     t0 = timer.time()
     target_positions_altaz = target_positions.transform_to(altaz_frame)
     t1 = timer.time()
-    print(f"... took {t1-t0} seconds")
+    print(f"... took {t1 - t0} seconds")
 
     # Compute and store the primary beam map, if requested
     pbp_freq = []
@@ -273,7 +299,7 @@ def main():
             pbp_freq.append(pbp)
             print(f"... primary beam max. in-field power = {pbp.max():.3f}")
             t1 = timer.time()
-            print(f"... took {t1-t0} seconds")
+            print(f"... took {t1 - t0} seconds")
     pbp_freq = np.array(pbp_freq)
 
     if not args.nopb:
@@ -318,7 +344,7 @@ def main():
             )
             afp = calc_array_factor_power(look_psi, target_psi)
             t1 = timer.time()
-            print(f"... took {t1-t0} seconds")
+            print(f"... took {t1 - t0} seconds")
 
             # Finally, estimate the zenith-normalised tied-array beam power.
             if args.nopb:
@@ -354,12 +380,13 @@ def main():
             grid_dec,
             ctr_levels,
             wcs,
+            scale_arcmin=round(width[0].to("arcmin").value, 1),
             label=tab_cbar_label,
             oname_suffix=oname_suffix,
         )
 
     tt1 = timer.time()
-    print(f"Done!! (Took {tt1-tt0} seconds.)\n")
+    print(f"Done!! (Took {tt1 - tt0} seconds.)\n")
 
     # Execute the localisation method using the TABs and detection data
     if args.localise:

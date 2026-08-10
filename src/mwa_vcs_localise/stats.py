@@ -1,43 +1,38 @@
-#!/usr/bin/env python
-
 ########################################################
 # Licensed under the Academic Free License version 3.0 #
 ########################################################
 
 # For basic algebra and statistics
+import cmasher as cm
+import matplotlib.pyplot as plt
+import matplotlib.ticker as mtick
 import numpy as np
-import scipy.stats as st
 import scipy.spatial as sp
-from scipy.ndimage import label
+import scipy.stats as st
 
 # Astropy
 from astropy.coordinates import SkyCoord
 from astropy.table import Table
 from astropy.wcs import WCS
 
-# For visualization
+# For visualisation
 from matplotlib.figure import Figure
-import matplotlib.pyplot as plt
-import matplotlib.ticker as mtick
-import cmasher as cm
+from scipy.ndimage import label
 
 
 def snr_reader(
     path_to_file: str,
 ) -> tuple[SkyCoord, np.ndarray, np.ndarray, np.ndarray]:
-    """Read in the input detection file with the TAB centre coordinates and
-    measured detection significance.
+    """Read beam-centre coordinates and S/N values from a detection CSV file.
 
-    Input files is expected to be in CSV format with headers "ra,dec,snr" at least.
-    The coordinates should be in "hms" and "dms" format for "ra" and "dec", respectively.
+    The CSV is expected to include at least ``ra``, ``dec``, and ``snr``
+    columns, where RA/Dec values are in hourangle/degree string format.
 
-    Args:
-        path_to_file (str): path of the CSV text file
-
-    Returns:
-        tuple[SkyCoord, np.ndarray, np.ndarray, np.ndarray]:
-            Centre coordinates, detection metrics, relative TAB weights
-            and a mask that identifies the highest detection significance TAB.
+    :param path_to_file: Path to the CSV file.
+    :type path_to_file: str
+    :returns: Beam-centre coordinates, S/N values, relative TAB weights, and
+        a mask selecting non-maximum-S/N entries.
+    :rtype: tuple[SkyCoord, np.ndarray, np.ndarray, np.ndarray]
     """
 
     obs_snr_table = Table.read(path_to_file, format="csv")
@@ -60,25 +55,25 @@ def covariance_estimation(
     nsim: int = 10000,
     plot_cov: bool = True,
 ) -> tuple[np.ndarray, Figure]:
-    """Estimate the covariance between each TAB pair. This is achieved via
-    simulation of the ratios of the pairs of TAB detection statistics. For
-    the most part, it only captures the covariance introduced by dividing
-    each TAB by a nominal "best detection".
+    """Estimate covariance between TAB ratios via Monte Carlo simulation.
 
-    Args:
-        obs_snr (np.ndarray): Observed detection metric (i.e., snr) for each TAB
-        obs_mask (np.ndarray): The mask which identifies which TABs are to be compared.
-        obs_weights (np.ndarray): The relative weights for each observed detection metric in a TAB.
-        nsim (int, optional): How many random multivariate draws to make per pair. Defaults to 10000.
-        plot_cov (bool, optional): Whether to plot the covariance matrix. Defaults to True.
-
-    Returns:
-        tuple[np.ndarray, Figure]: The covariance matrix itself, and a figure that contains the
-            covariance matrix plot (or be blank if `plot_cov` is False)
+    :param obs_snr: Observed S/N value for each TAB.
+    :type obs_snr: np.ndarray
+    :param obs_mask: Mask selecting TABs to compare against the max-S/N TAB.
+    :type obs_mask: np.ndarray
+    :param obs_weights: Relative weights derived from observed S/N values.
+    :type obs_weights: np.ndarray
+    :param nsim: Number of random draws used to estimate covariance.
+    :type nsim: int
+    :param plot_cov: If True, render a covariance heatmap.
+    :type plot_cov: bool
+    :returns: Estimated covariance matrix and its diagnostic figure.
+    :rtype: tuple[np.ndarray, Figure]
     """
     simulation_snr = st.multivariate_normal(obs_snr).rvs(nsim)
     simulation_ratio = (
-        simulation_snr[:, obs_mask] / simulation_snr.T[obs_snr.argmax()][:, None]
+        simulation_snr[:, obs_mask]
+        / simulation_snr.T[obs_snr.argmax()][:, None]
     )
     covariance = np.cov(simulation_ratio, rowvar=False)
     if np.all(np.abs(covariance) < 0.2):
@@ -103,13 +98,22 @@ def covariance_estimation(
         )
         i_maxsnr = np.argmax(obs_snr) + 1
         beam_pair_labels = np.array(
-            [f"{obs_i+1}/{i_maxsnr}" for obs_i, obs_snr in enumerate(obs_snr)]
+            [
+                f"{obs_i + 1}/{i_maxsnr}"
+                for obs_i, obs_snr in enumerate(obs_snr)
+            ]
         )[obs_mask]
-        ax1.set_xticks(ticks=np.arange(0, len(obs_weights)), labels=beam_pair_labels)
-        ax1.set_yticks(ticks=np.arange(0, len(obs_weights)), labels=beam_pair_labels)
+        ax1.set_xticks(
+            ticks=np.arange(0, len(obs_weights)), labels=beam_pair_labels
+        )
+        ax1.set_yticks(
+            ticks=np.arange(0, len(obs_weights)), labels=beam_pair_labels
+        )
         ax1.set_xlabel("Beam pair", fontsize=24, ha="center")
         ax1.set_ylabel("Beam pair", fontsize=24, ha="center")
-        ax1.set_title(r"$i_{\rm SNRmax}=$ " + f"{i_maxsnr}", fontsize=24, va="bottom")
+        ax1.set_title(
+            r"$i_{\rm SNRmax}=$ " + f"{i_maxsnr}", fontsize=24, va="bottom"
+        )
         ax1.tick_params(axis="both", which="major", labelsize=24)
         ax1.tick_params(axis="both", which="major", length=0)
         ax1.tick_params(
@@ -117,9 +121,15 @@ def covariance_estimation(
         )
 
         cbar = fig.colorbar(
-            ax1_img, ax=fig.axes, orientation="vertical", location="right", pad=0.01
+            ax1_img,
+            ax=fig.axes,
+            orientation="vertical",
+            location="right",
+            pad=0.01,
         )
-        cbar.ax.set_ylabel("Covariance", fontsize=24, rotation=270, labelpad=20)
+        cbar.ax.set_ylabel(
+            "Covariance", fontsize=24, rotation=270, labelpad=20
+        )
         cbar.ax.yaxis.set_ticks_position("right")
         cbar.ax.tick_params(
             which="major", direction="in", length=9, left=True, right=True
@@ -136,23 +146,20 @@ def chi2_calc(
     obs_weights: np.ndarray,
     cov: np.ndarray,
 ) -> np.ndarray:
-    """Compute the chi-squared statistics based on the least-squares regression formalism.
+    """Compute the localisation chi-squared surface on the sky grid.
 
-    The input data are multi-dimensional, and we only wish to compute the statistic across
-    the coordinate grid dimensions, thus there is some reshaping at different stages to
-    ensure the multiplications/summations corresponding to the normal matrix products occur
-    in the correct axes.
-
-    Args:
-        tabp_look (np.ndarray): An array of TAB power patterns (2D arrays).
-        obs_mask (np.ndarray): The mask which identifies which TABs are of interest.
-        obs_snr (np.ndarray): Observed detection metric (i.e., snr) for each TAB.
-        obs_weights (np.ndarray): The relative weights for each observed detection metric in a TAB.
-        cov (np.ndarray): The covariance matrix between TAB pairs.
-
-    Returns:
-        np.ndarray: A 2D chi-square map which can be processed to identify statistical peaks
-            that correspond to high localisation relative probabilities.
+    :param tabp_look: TAB power patterns.
+    :type tabp_look: np.ndarray
+    :param obs_mask: Mask selecting TABs used in the fit.
+    :type obs_mask: np.ndarray
+    :param obs_snr: Observed S/N value for each TAB.
+    :type obs_snr: np.ndarray
+    :param obs_weights: Relative weights for observed TAB measurements.
+    :type obs_weights: np.ndarray
+    :param cov: Covariance matrix between TAB-ratio measurements.
+    :type cov: np.ndarray
+    :returns: Two-dimensional chi-squared map over the sampled sky grid.
+    :rtype: np.ndarray
     """
     P_array = tabp_look[obs_mask, ...] / tabp_look[obs_snr.argmax(), ...]
     R_array = obs_weights[:, None, None] - P_array.squeeze()
@@ -173,24 +180,23 @@ def estimate_errors_from_islands(
     dec_idx: int,
     clvl: float,
 ) -> tuple[float, tuple[float, float] | None, int]:
-    """Calculate the symmetrical conservative error based on the probability islands
-    and their extent relative to the peak localisation position.
+    """Estimate symmetric localisation uncertainty from contour islands.
 
-    Args:
-        pmap (np.ndarray): The localisation probability map.
-        grid_ra (np.ndarray): The 2-D mesh grid in R.A. that defines the probability map coordinate.
-        grid_dec (np.ndarray): The 2-D mesh grid in Dec. that defines the probability map coordinate.
-        ra_idx (int): The R.A. grid index corresponding to the peak probability.
-        dec_idx (int): The Dec. grid index corresponding to the peak probability.
-        clvl (float): A contour level (in the same units as the probability map) that defines the
-            uncertainty region.
-
-    Returns:
-        tuple[float, tuple[float, float] | None, int]: A tuple containing -
-            (1) The maximum distance from the peak localisation pixel to the provided
-                contour level (i.e., the symmetric uncertainty),
-            (2) The pixel coordinates corresponding to the maximum distance, and
-            (3) The number of probability islands found in the image (typically 1).
+    :param pmap: Localisation probability map.
+    :type pmap: np.ndarray
+    :param grid_ra: RA coordinate grid corresponding to ``pmap``.
+    :type grid_ra: np.ndarray
+    :param grid_dec: Dec coordinate grid corresponding to ``pmap``.
+    :type grid_dec: np.ndarray
+    :param ra_idx: RA index of the peak-probability pixel.
+    :type ra_idx: int
+    :param dec_idx: Dec index of the peak-probability pixel.
+    :type dec_idx: int
+    :param clvl: Contour level used to define the uncertainty region.
+    :type clvl: float
+    :returns: Maximum peak-to-contour distance, its pixel coordinate, and the
+        number of connected islands.
+    :rtype: tuple[float, tuple[float, float] | None, int]
     """
 
     # Using the provided contour level, estimate the maximum distance from the peak to
@@ -199,9 +205,9 @@ def estimate_errors_from_islands(
     # contains the peak probability to calculate the uncertainties.
     peak_ra, peak_dec = (grid_ra[ra_idx, dec_idx], grid_dec[ra_idx, dec_idx])
     contour_mask = pmap >= clvl
-    labeled_prob_map, num_islands = label(contour_mask)
-    peak_island = labeled_prob_map[ra_idx, dec_idx]
-    same_island_pts = np.where(labeled_prob_map == peak_island)
+    labelled_prob_map, num_islands = label(contour_mask)
+    peak_island = labelled_prob_map[ra_idx, dec_idx]
+    same_island_pts = np.where(labelled_prob_map == peak_island)
 
     max_dist = 0.0
     max_dist_pt = None
@@ -217,28 +223,26 @@ def estimate_errors_from_islands(
 
 
 def get2Dcdf(s: float) -> float:
-    """Compute the Gaussian CDF value for a give sigma value.
+    """Compute the 2D Gaussian CDF value at a given sigma level.
 
-    Args:
-        s (float): The desired "sigma" quantity used to evaluate the CDF value.
-
-    Returns:
-        float: The Gaussian CDF value corresponding to the input "sigma" level.
+    :param s: Sigma level.
+    :type s: float
+    :returns: CDF value corresponding to ``s``.
+    :rtype: float
     """
     return 1 - np.exp(-0.5 * s**2)
 
 
 def mahal_error(prob: np.ndarray, sigma: float = 1) -> float | None:
-    """Calculate the Mahalanobis radius to provide an error on the localisation,
-    under the assumption that the underlying probability density is ~Gaussian.
+    """Map an equivalent Gaussian sigma level to a probability contour value.
 
-    Args:
-        prob (np.ndarray): The 2D probability density map.
-        sigma (float, optional): The equivalent Gaussian sigma desired to measure. Defaults to 1.
-
-    Returns:
-        float | None: The probability density value associated with the input sigma level.
-            If a sensible value cannot be found, the function return None.
+    :param prob: Two-dimensional probability density map.
+    :type prob: np.ndarray
+    :param sigma: Gaussian-equivalent sigma level.
+    :type sigma: float
+    :returns: Probability density contour value for ``sigma``, or ``None`` if
+        no sensible contour is found.
+    :rtype: float | None
     """
 
     prob_flat_sorted = np.sort(prob, axis=None)
@@ -273,30 +277,35 @@ def localise_and_plot(
     show_bestfit_loc: bool = True,
     zoom: bool = True,
 ) -> Figure:
-    """Generate the localisation maps, identify peaks and uncertainties.
-    Plot the results and report the best position identified with a
-    corresponding uncertainty.
+    """Render localisation probability maps, contours, and annotations.
 
-    Args:
-        tab0 (np.ndarray): The TAB pattern corresponding to the best initial detection statistic.
-        chi2 (np.ndarray): A 2D chi-square map encoding the localisation probabilities.
-        grid_ra (np.ndarray): The 2-D mesh grid in R.A. that defines the probability map coordinate.
-        grid_dec (np.ndarray): The 2-D mesh grid in Dec. that defines the probability map coordinate.
-        wcs: (WCS | None): The astropy WCS object defining the world coordinate system.
-        obs_beam_centers (SkyCoord): The TAB centre coordinates.
-        obs_beam_snrs (np.ndarray): Observed detection metric (i.e., snr) for each TAB.
-        obs_mask (np.ndarray): The mask which identifies which TABs are of interest.
-        truth_coords (SkyCoord | None, optional): Coordinates of the true source position (for comparison).
-            Defaults to None.
-        window (str | None, optional): The kind of smoothing approach to apply to the localisation statistic.
-            Defaults to None.
-        show_bestfit_loc (bool, optional): Whether to show the best localisation cross-hair. Defaults to True.
-        zoom (bool, optional): Zoom into the nominal central region and provide an inset of the localisation.
-            This will do a number of calculations and nudge figure x/y limits to make things look a bit nicer.
-            Defaults to True.
-
-    Returns:
-        Figure: The figure containing the localisation plot.
+    :param tab0: TAB pattern for the maximum-S/N detection.
+    :type tab0: np.ndarray
+    :param chi2: Chi-squared map used to derive localisation probability.
+    :type chi2: np.ndarray
+    :param grid_ra: RA coordinate grid.
+    :type grid_ra: np.ndarray
+    :param grid_dec: Dec coordinate grid.
+    :type grid_dec: np.ndarray
+    :param wcs: WCS projection for plotting.
+    :type wcs: WCS | None
+    :param obs_beam_centers: TAB centre coordinates.
+    :type obs_beam_centers: SkyCoord
+    :param obs_beam_snrs: Observed S/N values for each TAB.
+    :type obs_beam_snrs: np.ndarray
+    :param obs_mask: Mask selecting non-maximum-S/N TABs.
+    :type obs_mask: np.ndarray
+    :param truth_coords: Optional reference coordinate for comparison.
+    :type truth_coords: SkyCoord | None
+    :param window: Optional regularization scheme (for example ``tab`` or
+        ``gaussian``).
+    :type window: str | None
+    :param show_bestfit_loc: If True, show best-fit crosshair in inset.
+    :type show_bestfit_loc: bool
+    :param zoom: If True, include an inset around the best-fit region.
+    :type zoom: bool
+    :returns: Matplotlib figure containing the localisation visualisation.
+    :rtype: Figure
     """
 
     aspect = "auto"
@@ -312,7 +321,8 @@ def localise_and_plot(
         )
         ctr_coord = np.squeeze(obs_beam_centers[~obs_mask])
         dists = [
-            c.to("deg").value for c in ctr_coord.separation(obs_beam_centers[obs_mask])
+            c.to("deg").value
+            for c in ctr_coord.separation(obs_beam_centers[obs_mask])
         ]
         max_dist = max(dists)
         mu = np.array([ctr_coord.ra.deg, ctr_coord.dec.deg])
@@ -340,7 +350,9 @@ def localise_and_plot(
     prob[prob < 1e-9] = 0
 
     # Coordinates associated with minimum chi2
-    best_ra_index, best_dec_index = np.unravel_index(np.argmax(prob), prob.shape)
+    best_ra_index, best_dec_index = np.unravel_index(
+        np.argmax(prob), prob.shape
+    )
     best_ra, best_dec = (
         grid_ra[best_ra_index, best_dec_index],
         grid_dec[best_ra_index, best_dec_index],
@@ -354,17 +366,27 @@ def localise_and_plot(
     sigma_levels = [5, 3, 1]
     print(f"Significance intervals set at: {sigma_levels}-sigma")
     contour_levels = np.array([mahal_error(prob, s) for s in sigma_levels])
-    sym_err, _, nislands = estimate_errors_from_islands(
-        prob, grid_ra, grid_dec, best_ra_index, best_dec_index, contour_levels.min()
+    sym_err, _, _ = estimate_errors_from_islands(
+        prob,
+        grid_ra,
+        grid_dec,
+        best_ra_index,
+        best_dec_index,
+        contour_levels.min(),
     )
 
     print(f"best position estimate = {best_coord_hms}")
     print(f"                       = {best_coord_deg} deg")
     for isig, sig in enumerate(sigma_levels):
-        sig_err, _, nislands = estimate_errors_from_islands(
-            prob, grid_ra, grid_dec, best_ra_index, best_dec_index, contour_levels[isig]
+        sig_err, _, _nislands = estimate_errors_from_islands(
+            prob,
+            grid_ra,
+            grid_dec,
+            best_ra_index,
+            best_dec_index,
+            contour_levels[isig],
         )
-        print(f"  {sig}-sigma sym. pos. err. = {sig_err*60:g} arcmin")
+        print(f"  {sig}-sigma sym. pos. err. = {sig_err * 60:g} arcmin")
 
     # Prepare the figure and place artist elements
     fig = plt.figure(figsize=(8, 6), constrained_layout=True)
@@ -428,7 +450,9 @@ def localise_and_plot(
         )
 
         # Position the inset in the top-right corner of the figure
-        ax1_img_inset = ax1.inset_axes([0.675, 0.675, 0.31, 0.31], projection=wcs)
+        ax1_img_inset = ax1.inset_axes(
+            [0.675, 0.675, 0.31, 0.31], projection=wcs
+        )
         ax1_img_inset.set_aspect(ax1.get_aspect())
 
         # Localisation map (inset)
@@ -458,8 +482,12 @@ def localise_and_plot(
         ax1.indicate_inset_zoom(ax1_img_inset, edgecolor="black")
 
         # Set some axis customisations
-        ax1_img_inset.xaxis.set_major_locator(mtick.MaxNLocator(5, prune="both"))
-        ax1_img_inset.yaxis.set_major_locator(mtick.MaxNLocator(5, prune="both"))
+        ax1_img_inset.xaxis.set_major_locator(
+            mtick.MaxNLocator(5, prune="both")
+        )
+        ax1_img_inset.yaxis.set_major_locator(
+            mtick.MaxNLocator(5, prune="both")
+        )
         ax1_img_inset.grid(ls=":")
         ax1_img_inset.tick_params(axis="both", direction="out")
         ax1_img_inset.set_xlabel(" ")
@@ -480,7 +508,7 @@ def localise_and_plot(
                 transform=ax1_img_inset.get_transform("world"),
             )
             ax1.set_title(
-                f"""Best-fit localisation = {best_coord_hms}\nUncertainty ({sigma_levels[0]}$\sigma$, no iono.) = $\pm$ {sym_err*60:g} arcmin""",
+                f"""Best-fit localisation = {best_coord_hms}\nUncertainty ({sigma_levels[0]}$\\sigma$, no iono.) = $\\pm$ {sym_err * 60:g} arcmin""",
             )
 
         # Add a truth coordinate for comparison to the inset
@@ -509,11 +537,13 @@ def localise_and_plot(
         )
 
         best_true_sep = best_coord.separation(truth_coords)
-        print(f"Offset of truth from best-fit position: {best_true_sep.to('arcmin'):g}")
+        print(
+            f"Offset of truth from best-fit position: {best_true_sep.to('arcmin'):g}"
+        )
 
     # Collect and fix legend handles and labels
     ctr_h = ax1_ctr.legend_elements()[0]
-    ctr_l = [f"${s}\sigma$" for s in sigma_levels]
+    ctr_l = [rf"${s}\sigma$" for s in sigma_levels]
     bpt_h, bpt_l = ax1.get_legend_handles_labels()
 
     all_handles = ctr_h + bpt_h
@@ -589,26 +619,30 @@ def localise(
     window: str | None = None,
     zoom: bool = True,
 ) -> tuple[Figure, Figure]:
-    """Execute the localisation procedure.
+    """Execute the full localisation workflow from detections and TAB maps.
 
-    Args:
-        detfile (str): The file path containing ra, dec and detection significance information.
-        tabp_look (np.ndarray): The array of TAB patters for each pointing in `detfile`
-        grid_ra (np.ndarray): The 2-D mesh grid in R.A. that defines the probability map coordinate.
-        grid_dec (np.ndarray): The 2-D mesh grid in Dec. that defines the probability map coordinate.
-        wcs: (WCS | None): The astropy WCS object defining the world coordinate system.
-        cov_nsim (int, optional): How many random multivariate draws to make per TAB when estimating
-            the covariance. Defaults to 10000.
-        plot_cov (bool, optional): Whether to plot the covariance matrix. Defaults to True.
-        truth_coords (SkyCoord | None, optional): Coordinates of the true source position (for comparison).
-            Defaults to None.
-        window (str | None, optional): The kind of smoothing approach to apply to the localisation statistic.
-            Defaults to None.
-        zoom (bool, optional): Zoom into the nominal central region and provide an inset of the localisation.
-            Defaults to True.
-
-    Returns:
-        tuple[Figure, Figure]: Two Figure objects containing the localisation map and covariance matrix.
+    :param detfile: CSV file containing at least ``ra``, ``dec``, and ``snr``.
+    :type detfile: str
+    :param tabp_look: TAB power maps for the sampled look directions.
+    :type tabp_look: np.ndarray
+    :param grid_ra: RA coordinate grid.
+    :type grid_ra: np.ndarray
+    :param grid_dec: Dec coordinate grid.
+    :type grid_dec: np.ndarray
+    :param wcs: WCS projection used by localisation plots.
+    :type wcs: WCS | None
+    :param cov_nsim: Number of simulations used for covariance estimation.
+    :type cov_nsim: int
+    :param plot_cov: If True, plot the covariance matrix.
+    :type plot_cov: bool
+    :param truth_coords: Optional known source coordinate for comparison.
+    :type truth_coords: SkyCoord | None
+    :param window: Optional regularization scheme.
+    :type window: str | None
+    :param zoom: If True, include a zoomed inset in localisation plot.
+    :type zoom: bool
+    :returns: Localization figure and covariance-matrix figure.
+    :rtype: tuple[Figure, Figure]
     """
 
     obs_beam_centers, obs_snr, obs_weights, obs_mask = snr_reader(detfile)
@@ -616,7 +650,7 @@ def localise(
         obs_snr, obs_mask, obs_weights, nsim=cov_nsim, plot_cov=plot_cov
     )
     chi2 = chi2_calc(tabp_look, obs_mask, obs_snr, obs_weights, covariance)
-    localization_fig = localise_and_plot(
+    localisation_fig = localise_and_plot(
         tabp_look[obs_snr.argmax(), ...].squeeze(),
         chi2,
         grid_ra,
@@ -630,4 +664,4 @@ def localise(
         show_bestfit_loc=True,
         zoom=zoom,
     )
-    return localization_fig, cov_fig
+    return localisation_fig, cov_fig
