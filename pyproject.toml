@@ -17,11 +17,11 @@ maintainers = [
 ]
 classifiers = [
   "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.12",
   "License :: OSI Approved :: Academic Free License (AFL)",
-  "Operating System :: POSIX :: Linux",
   "Topic :: Scientific/Engineering :: Astronomy",
 ]
-requires-python = ">=3.10"
+requires-python = ">=3.12"
 dependencies = [
   "astropy",
   "matplotlib",
@@ -33,10 +33,7 @@ dependencies = [
 ]
 
 [dependency-groups]
-dev = [
-    "ruff",
-    "pytest>=8.4.2",
-]
+dev = ["ruff"]
 
 [project.scripts]
 mwa_tab_loc = "mwa_vcs_localise:make_tab_pattern.main"
