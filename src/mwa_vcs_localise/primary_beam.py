@@ -1,12 +1,10 @@
-#!/usr/bin/env python
-
 ########################################################
 # Licensed under the Academic Free License version 3.0 #
 ########################################################
 
 import numpy as np
-from mwalib import MetafitsContext
 from mwa_hyperbeam import FEEBeam as PrimaryBeam
+from mwalib import MetafitsContext
 
 
 def get_primary_beam_power(
@@ -62,12 +60,12 @@ def get_primary_beam_power(
     # can use the Pauli spin matrices and simple matrix operations to extract
     # the final Stokes parameters. Effectively using the formalism of the
     # "polarisation measurement equation" of Hamaker (2000) and van Straten (2004).
-    rho = dict(
-        sI=np.matrix([[1, 0], [0, 1]]),  # sigma0, provides I
-        sU=np.matrix([[0, 1], [1, 0]]),  # sigma1, provides U
-        sV=np.matrix([[0, -1j], [1j, 0]]),  # sigma2, provides V
-        sQ=np.matrix([[1, 0], [0, -1]]),  # sigma3, provides Q
-    )
+    rho = {
+        "sI": np.matrix([[1, 0], [0, 1]]),  # sigma0, provides I
+        "sU": np.matrix([[0, 1], [1, 0]]),  # sigma1, provides U
+        "sV": np.matrix([[0, -1j], [1j, 0]]),  # sigma2, provides V
+        "sQ": np.matrix([[1, 0], [0, -1]]),  # sigma3, provides Q
+    }
     # Multiplying the above spin matrices on the left by the Jones matrix,
     # and on the right by the Hermitian transpose of the Jones matrix will
     # retrieve the Stokes response of the instrument (modulo a scaling factor).
@@ -84,12 +82,14 @@ def get_primary_beam_power(
     # Here, we figure out the optimal contraction path once, and then just use
     # that for each Stokes parameter. (There is possibly a more efficient combination
     # of operations might scale better, but this is still rapid.)
-    einsum_path = np.einsum_path("Nki,ij,jkN->N", J, rho["sI"], K, optimize="optimal")
+    einsum_path = np.einsum_path(
+        "Nki,ij,jkN->N", J, rho["sI"], K, optimize="optimal"
+    )
     if show_path:
         print(einsum_path[0])
         print(einsum_path[1])
 
-    stokes_response = dict()
+    stokes_response = {}
     for st in stokes:
         # From the Stokes parameter letter, retrieve the correct spin matrix
         rho_mat = rho[f"s{st}"]
