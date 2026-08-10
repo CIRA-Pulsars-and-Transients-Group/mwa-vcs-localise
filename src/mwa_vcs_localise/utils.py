@@ -180,11 +180,10 @@ def find_characteristic_baseline(
     distances = dist * u.m
 
     # use a KDE approach to estimate the mode of the baseline distribution
-    print(az.kde(dist))
     grid, density, _ = az.kde(dist)
     dist_mode = grid[np.argmax(density)] * u.m
     dist_hdi = (
-        np.asarray(az.hdi(dist, hdi_prob=hdi_prob, multimodal=False)) * u.m
+        np.asarray(az.hdi(dist, prob=hdi_prob, method="nearest")) * u.m
     )
 
     return dist_mode, max_dist, dist_hdi, distances
