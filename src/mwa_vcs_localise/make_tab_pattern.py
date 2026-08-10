@@ -68,12 +68,12 @@ def main():
         default=None,
     )
     parser.add_argument(
-        "--use_wcs",
+        "--use-wcs",
         action="store_true",
         help="Use WCS to define a grid around the central point.",
     )
     parser.add_argument(
-        "--wcs_grid_size",
+        "--wcs-grid-size",
         help="""The WCS grid size, in pixels, the be created. The centre of the grid
           is either the provided 'look-direction' (-L option) or the first entry
           in the provided detection file (--detfile option).""",
@@ -82,7 +82,7 @@ def main():
         default=(1024, 1024),
     )
     parser.add_argument(
-        "--wcs_pixel_size",
+        "--wcs-pixel-size",
         help="""The size of each pixel in the WCS grid, in arcseconds""",
         type=float,
         default=10.0,
