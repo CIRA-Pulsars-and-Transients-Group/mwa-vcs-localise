@@ -41,7 +41,7 @@ def get_primary_beam_power(
     """
 
     za = np.pi / 2 - alt
-    beam = PrimaryBeam()
+    beam = PrimaryBeam(None)
 
     print("... calculating Jones matrices")
     jones = beam.calc_jones_array(
