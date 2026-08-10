@@ -18,7 +18,7 @@ for reg in none gaussian tab;do
         -f ${singlefreq} \
         -t ${obstime} \
         --detfile ${detection_file} \
-        --use_wcs --wcs_pixel_size 5 --wcs_grid_size 1536 1536 \
+        --use-wcs --wcs-pixel-size 5 --wcs-grid-size 1536 1536 \
         --plot \
         --localise \
         --regularise ${reg} \

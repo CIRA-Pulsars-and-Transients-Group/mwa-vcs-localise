@@ -17,7 +17,7 @@ mwa_tab_loc \
     -f ${singlefreq} \
     -t ${obstime} \
     --detfile ${detection_file} \
-    --use_wcs --wcs_pixel_size 5 \
+    --use-wcs --wcs-pixel-size 5 \
     --zoom \
     --plot \
     --localise \
